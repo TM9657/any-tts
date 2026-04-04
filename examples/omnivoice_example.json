@@ -1,0 +1,7 @@
+{
+  "text": "Hello! This is a normal English example of OmniVoice text to speech.",
+  "language": "English",
+  "instruct": "female, moderate pitch, american accent",
+  "cfg_scale": 2.0,
+  "output": "output/omnivoice/omnivoice_demo.wav"
+}

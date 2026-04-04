@@ -2,9 +2,9 @@
 
 mod common;
 
-use tts_rs::models::qwen3_tts::Qwen3TtsModel;
-use tts_rs::traits::TtsModel;
-use tts_rs::{ModelType, SynthesisRequest, TtsConfig};
+use any_tts::models::qwen3_tts::Qwen3TtsModel;
+use any_tts::traits::TtsModel;
+use any_tts::{ModelType, SynthesisRequest, TtsConfig};
 
 #[test]
 fn test_qwen3tts_load_missing_path() {
@@ -27,7 +27,7 @@ fn test_qwen3tts_load_missing_path() {
 
 #[test]
 fn test_qwen3tts_config_parsing() {
-    use tts_rs::models::qwen3_tts::config::Qwen3TtsConfig;
+    use any_tts::models::qwen3_tts::config::Qwen3TtsConfig;
 
     let json = r#"{
         "model_type": "qwen3_tts",
@@ -89,7 +89,7 @@ fn test_qwen3tts_config_parsing() {
 
 #[test]
 fn test_qwen3tts_config_with_code_predictor() {
-    use tts_rs::models::qwen3_tts::config::Qwen3TtsConfig;
+    use any_tts::models::qwen3_tts::config::Qwen3TtsConfig;
 
     let json = r#"{
         "talker_config": {
@@ -113,7 +113,7 @@ fn test_qwen3tts_config_with_code_predictor() {
 
 #[test]
 fn test_qwen3tts_language_dialect_filtering() {
-    use tts_rs::models::qwen3_tts::config::Qwen3TtsConfig;
+    use any_tts::models::qwen3_tts::config::Qwen3TtsConfig;
 
     let json = r#"{
         "talker_config": {

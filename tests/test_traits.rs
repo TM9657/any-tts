@@ -1,7 +1,7 @@
 //! Tests for the core TtsModel trait and API types.
 
 use std::path::PathBuf;
-use tts_rs::{AudioSamples, ModelFiles, ModelType, SynthesisRequest, TtsConfig};
+use any_tts::{AudioSamples, ModelFiles, ModelType, SynthesisRequest, TtsConfig};
 
 #[test]
 fn test_synthesis_request_builder() {
@@ -38,11 +38,11 @@ fn test_synthesis_request_defaults() {
 fn test_tts_config_builder() {
     let config = TtsConfig::new(ModelType::Qwen3Tts)
         .with_model_path("/models/qwen3-tts")
-        .with_dtype(tts_rs::config::DType::BF16);
+        .with_dtype(any_tts::config::DType::BF16);
 
     assert_eq!(config.model_type, ModelType::Qwen3Tts);
     assert_eq!(config.model_path.as_deref(), Some("/models/qwen3-tts"));
-    assert_eq!(config.dtype, tts_rs::config::DType::BF16);
+    assert_eq!(config.dtype, any_tts::config::DType::BF16);
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn test_load_model_without_path_returns_error() {
     // Without download feature disabled or HF unavailable, this should
     // fail because no files can be resolved.
     let config = TtsConfig::new(ModelType::Qwen3Tts);
-    let result = tts_rs::load_model(config);
+    let result = any_tts::load_model(config);
     // On machines with cached weights and the default `download` feature,
     // loading may succeed. Only assert the error shape when it does fail.
     if let Err(err) = result {
@@ -220,7 +220,7 @@ fn test_load_model_without_path_returns_error() {
 #[test]
 fn test_load_model_with_nonexistent_path_returns_error() {
     let config = TtsConfig::new(ModelType::Qwen3Tts).with_model_path("/nonexistent/path/to/model");
-    let result = tts_rs::load_model(config);
+    let result = any_tts::load_model(config);
     // A nonexistent local path can still succeed when the download fallback
     // resolves cached or remote model files.
     if let Err(err) = result {
@@ -241,7 +241,7 @@ fn test_load_model_with_nonexistent_path_returns_error() {
 
 #[test]
 fn test_dtype_to_candle_conversion() {
-    use tts_rs::config::DType;
+    use any_tts::config::DType;
     assert_eq!(DType::F32.to_candle(), candle_core::DType::F32);
     assert_eq!(DType::F16.to_candle(), candle_core::DType::F16);
     assert_eq!(DType::BF16.to_candle(), candle_core::DType::BF16);
@@ -300,7 +300,7 @@ fn test_model_files_missing_files_kokoro() {
 #[test]
 fn test_load_kokoro_without_path_returns_error() {
     let config = TtsConfig::new(ModelType::Kokoro);
-    let result = tts_rs::load_model(config);
+    let result = any_tts::load_model(config);
     // Without model weights present locally, loading should fail.
     // With the `download` feature, it may attempt to download from HF and
     // succeed if the model is cached — in that case the test is trivially ok.
@@ -326,21 +326,21 @@ fn test_load_kokoro_without_path_returns_error() {
 
 #[test]
 fn test_reference_audio_construction() {
-    let audio = tts_rs::ReferenceAudio::new(vec![0.0f32; 24000], 24000);
+    let audio = any_tts::ReferenceAudio::new(vec![0.0f32; 24000], 24000);
     assert!(!audio.is_empty());
     assert!((audio.duration_secs() - 1.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn test_reference_audio_empty() {
-    let audio = tts_rs::ReferenceAudio::new(vec![], 24000);
+    let audio = any_tts::ReferenceAudio::new(vec![], 24000);
     assert!(audio.is_empty());
     assert!((audio.duration_secs()).abs() < f32::EPSILON);
 }
 
 #[test]
 fn test_reference_audio_zero_sample_rate() {
-    let audio = tts_rs::ReferenceAudio::new(vec![0.0; 100], 0);
+    let audio = any_tts::ReferenceAudio::new(vec![0.0; 100], 0);
     assert!((audio.duration_secs()).abs() < f32::EPSILON);
 }
 
@@ -348,7 +348,7 @@ fn test_reference_audio_zero_sample_rate() {
 fn test_voice_embedding_roundtrip() {
     let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
     let shape = vec![1, 6];
-    let embedding = tts_rs::VoiceEmbedding::new(data.clone(), shape.clone(), "kokoro");
+    let embedding = any_tts::VoiceEmbedding::new(data.clone(), shape.clone(), "kokoro");
 
     assert_eq!(embedding.model_type(), "kokoro");
     assert_eq!(embedding.shape(), &[1, 6]);
@@ -365,7 +365,7 @@ fn test_voice_embedding_roundtrip() {
 fn test_voice_embedding_save_load() {
     let data = vec![0.1f32, 0.2, 0.3, 0.4];
     let shape = vec![1, 4];
-    let embedding = tts_rs::VoiceEmbedding::new(data.clone(), shape.clone(), "kokoro");
+    let embedding = any_tts::VoiceEmbedding::new(data.clone(), shape.clone(), "kokoro");
 
     let dir = std::env::temp_dir().join("tts_rs_test_voice_embedding");
     std::fs::create_dir_all(&dir).unwrap();
@@ -374,7 +374,7 @@ fn test_voice_embedding_save_load() {
     embedding.save(&path).unwrap();
     assert!(path.exists());
 
-    let loaded = tts_rs::VoiceEmbedding::load(&path).unwrap();
+    let loaded = any_tts::VoiceEmbedding::load(&path).unwrap();
     assert_eq!(loaded.model_type(), "kokoro");
     assert_eq!(loaded.shape(), &[1, 4]);
 
@@ -389,7 +389,7 @@ fn test_voice_embedding_save_load() {
 
 #[test]
 fn test_synthesis_request_with_reference_audio() {
-    let audio = tts_rs::ReferenceAudio::new(vec![0.0; 24000], 24000);
+    let audio = any_tts::ReferenceAudio::new(vec![0.0; 24000], 24000);
     let req = SynthesisRequest::new("Hello!").with_reference_audio(audio);
 
     assert!(req.reference_audio.is_some());
@@ -399,7 +399,7 @@ fn test_synthesis_request_with_reference_audio() {
 
 #[test]
 fn test_synthesis_request_with_voice_embedding() {
-    let embedding = tts_rs::VoiceEmbedding::new(vec![0.0; 256], vec![1, 256], "kokoro");
+    let embedding = any_tts::VoiceEmbedding::new(vec![0.0; 256], vec![1, 256], "kokoro");
     let req = SynthesisRequest::new("Hello!").with_voice_embedding(embedding);
 
     assert!(req.voice_embedding.is_some());

@@ -1,0 +1,7 @@
+{
+  "text": "Speaker 1: Welcome back. Today we are testing a short VibeVoice prompt generated from native Rust.\nSpeaker 1: The goal is to keep the script compact enough for parity checks while still sounding natural.",
+  "cfg_scale": 1.3,
+  "max_tokens": 256,
+  "temperature": 0.0,
+  "output": "output/vibevoice/vibevoice_demo.wav"
+}

@@ -1,7 +1,7 @@
 //! Quick test for Qwen3-TTS audio quality.
-use tts_rs::models::qwen3_tts::Qwen3TtsModel;
-use tts_rs::traits::TtsModel;
-use tts_rs::{ModelType, SynthesisRequest, TtsConfig};
+use any_tts::models::qwen3_tts::Qwen3TtsModel;
+use any_tts::traits::TtsModel;
+use any_tts::{ModelType, SynthesisRequest, TtsConfig};
 
 fn main() {
     let out_dir = std::path::Path::new("output/qwen3_tts");
@@ -14,7 +14,7 @@ fn main() {
 
     // Verify tokenization: check that special tokens are correctly identified
     {
-        use tts_rs::tokenizer::TextTokenizer;
+        use any_tts::tokenizer::TextTokenizer;
         let files = model.files();
         let tok_path = files.tokenizer.as_ref().unwrap();
         let tok = TextTokenizer::from_file(tok_path).unwrap();

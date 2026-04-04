@@ -11,9 +11,9 @@
 //!
 //! Output goes to `output/qwen3_tts/` in the project root.
 
-use tts_rs::models::qwen3_tts::Qwen3TtsModel;
-use tts_rs::traits::TtsModel;
-use tts_rs::{ModelType, SynthesisRequest, TtsConfig};
+use any_tts::models::qwen3_tts::Qwen3TtsModel;
+use any_tts::traits::TtsModel;
+use any_tts::{ModelType, SynthesisRequest, TtsConfig};
 
 fn main() {
     let out_dir = std::path::Path::new("output/qwen3_tts");
