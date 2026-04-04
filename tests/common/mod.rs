@@ -1,6 +1,6 @@
 //! Shared test utilities.
 
-use tts_rs::audio::AudioSamples;
+use any_tts::audio::AudioSamples;
 
 /// Validate basic audio properties.
 pub fn assert_valid_audio(audio: &AudioSamples) {

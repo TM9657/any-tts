@@ -166,7 +166,10 @@ impl TtsModel for VoxtralModel {
         let prompt_len = prompt_embeddings.dim(1)?;
         let prompt_mask = make_causal_mask(prompt_len, self.compute_dtype, &self.compute_device)?;
         let hidden = lm.forward_embeddings(&prompt_embeddings, 0, Some(&prompt_mask))?;
-        let mut last_hidden = hidden.narrow(1, prompt_len - 1, 1)?.squeeze(1)?;
+        let mut last_hidden = hidden
+            .narrow(1, prompt_len - 1, 1)?
+            .squeeze(1)?
+            .contiguous()?;
 
         let max_tokens = request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
         let mut generated_frames = Vec::with_capacity(max_tokens.saturating_add(1));
@@ -182,7 +185,7 @@ impl TtsModel for VoxtralModel {
             let next_embedding = self.audio_codebook_embeddings.embed_frame(&frame, &self.compute_device)?;
             let next_embedding = next_embedding.unsqueeze(0)?.unsqueeze(0)?;
             let step_hidden = lm.forward_embeddings(&next_embedding, prompt_len + step, None)?;
-            last_hidden = step_hidden.squeeze(1)?;
+            last_hidden = step_hidden.squeeze(1)?.contiguous()?;
         }
         drop(lm);
 
@@ -800,7 +803,7 @@ impl FlowMatchingAudioTransformer {
             hidden = layer.forward(&hidden)?;
         }
         let hidden = self.norm.forward(&hidden)?;
-        let hidden = hidden.narrow(1, 0, 1)?.squeeze(1)?;
+        let hidden = hidden.narrow(1, 0, 1)?.squeeze(1)?.contiguous()?;
         Ok(self.acoustic_codebook_output.forward(&hidden)?)
     }
 }
@@ -1439,7 +1442,8 @@ fn permute_mistral_rope_weight(
     Ok(weight
         .reshape((num_heads, head_dim / 2, 2, in_features))?
         .transpose(1, 2)?
-        .reshape((out_features, in_features))?)
+        .reshape((out_features, in_features))?
+        .contiguous()?)
 }
 
 fn load_mmap_var_builder(

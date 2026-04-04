@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to tts-rs.
+Thanks for contributing to any-tts.
 
 This repository is a model-integration project as much as it is a Rust library. Good contributions keep the public API honest, keep backend behavior explicit, and avoid documenting features that only exist upstream but not in this crate yet.
 

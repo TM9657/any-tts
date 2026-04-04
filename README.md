@@ -2,14 +2,14 @@
   <img src="https://flow-like.com/favicon.svg" alt="Flow-Like icon in use here" width="84" height="84">
 </p>
 
-# tts-rs
+# any-tts
 
 <p align="center">
   Rust-native text-to-speech for modern open models.
 </p>
 
 <p align="center">
-  <a href="https://github.com/TM9657/tts-rs"><img src="https://img.shields.io/badge/repo-TM9657%2Ftts--rs-111111" alt="Repository"></a>
+  <a href="https://github.com/TM9657/any-tts"><img src="https://img.shields.io/badge/repo-TM9657%2Fany--tts-111111" alt="Repository"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/crate_license-MIT%20OR%20Apache--2.0-2d6cdf" alt="Crate license"></a>
     <img src="https://img.shields.io/badge/models-5_public%20backends-0a7f5a" alt="Public models">
   <img src="https://img.shields.io/badge/runtime-Candle%20CPU%20%7C%20CUDA%20%7C%20Metal%20%7C%20Accelerate-8a4fff" alt="Backends">
@@ -17,7 +17,7 @@
 
 The Flow-Like icon above is intentionally in use here at the top of this README.
 
-tts-rs is a Rust text-to-speech library built around Candle with one trait-based API for multiple open-weight model families. You can point it at local files, hand it explicit paths from your own cache, or let it resolve missing assets from Hugging Face and keep the synthesis call site unchanged.
+any-tts is a Rust text-to-speech library built around Candle with one trait-based API for multiple open-weight model families. You can point it at local files, hand it explicit paths from your own cache, or let it resolve missing assets from Hugging Face and keep the synthesis call site unchanged.
 
 If you want one Rust TTS surface for small local models, multilingual research checkpoints, and agent-oriented voice stacks without rewriting your application around each model family, this is the repo.
 
@@ -32,7 +32,7 @@ If you want one Rust TTS surface for small local models, multilingual research c
 
 ## Public model support
 
-| Model | Status in tts-rs | Default upstream | Best at | Main tradeoff | Model license |
+| Model | Status in any-tts | Default upstream | Best at | Main tradeoff | Model license |
 | --- | --- | --- | --- | --- | --- |
 | Kokoro-82M | Public, native, lightweight | `hexgrad/Kokoro-82M` | Fast local TTS with small weights | Requires espeak-based phonemization; default open release is mostly preset voices | Apache-2.0 |
 | OmniVoice | Public, native | `k2-fsa/OmniVoice` | Huge language coverage and instruct-driven voice design | The current Rust backend does not yet expose upstream zero-shot cloning | Apache-2.0 |
@@ -48,7 +48,7 @@ Important: the Rust crate is dual licensed under `MIT OR Apache-2.0`. The model 
 | --- | --- | --- | --- | --- |
 | KugelAudio-0-Open | `src/models/kugelaudio/` and `examples/generate_kugelaudio.rs` | In-tree experiment, not exported from the public `ModelType` enum | MIT | Focused on 24 European languages and pre-encoded voices, but the current example targets a model variant that is not part of the crate's exported API surface yet. |
 
-That split matters. The README below treats Kokoro, OmniVoice, Qwen3-TTS, and Voxtral as supported top-level backends, and it treats KugelAudio as work in progress.
+That split matters. The README below treats Kokoro, OmniVoice, Qwen3-TTS, VibeVoice, and Voxtral as supported top-level backends, and it treats KugelAudio as work in progress.
 
 ## Installation
 
@@ -58,14 +58,14 @@ Add the crate from git:
 
 ```toml
 [dependencies]
-tts-rs = { git = "https://github.com/TM9657/tts-rs" }
+any-tts = { git = "https://github.com/TM9657/any-tts" }
 ```
 
 Or opt into a smaller feature set:
 
 ```toml
 [dependencies]
-tts-rs = { git = "https://github.com/TM9657/tts-rs", default-features = false, features = ["kokoro", "download", "metal"] }
+any-tts = { git = "https://github.com/TM9657/any-tts", default-features = false, features = ["kokoro", "download", "metal"] }
 ```
 
 ### Feature flags
@@ -96,7 +96,7 @@ By default the crate enables `qwen3-tts`, `kokoro`, `omnivoice`, `vibevoice`, `v
 ## Quick start
 
 ```rust,no_run
-use tts_rs::{load_model, ModelType, SynthesisRequest, TtsConfig};
+use any_tts::{load_model, ModelType, SynthesisRequest, TtsConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = load_model(
@@ -118,7 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## File resolution flow
 
-tts-rs resolves model assets in three tiers, in this order:
+any-tts resolves model assets in three tiers, in this order:
 
 1. Explicit files you set on `TtsConfig` with methods like `with_config_file()` or `with_weight_file()`.
 2. Auto-discovery from `with_model_path()` using the expected filenames for that backend.
@@ -167,7 +167,7 @@ Note on KugelAudio: there is an in-tree `generate_kugelaudio` example, but it cu
 
 Kokoro is the compact option in this repo: an 82M-parameter StyleTTS2 plus ISTFTNet stack with Apache-licensed weights. In practice, it is the backend you reach for when you want a fast local model, simple deployment, and a much smaller download than the larger multilingual checkpoints.
 
-**What works in tts-rs today**
+**What works in any-tts today**
 
 - Native Rust inference.
 - Default output at 24 kHz.
@@ -199,7 +199,7 @@ Kokoro is the compact option in this repo: an 82M-parameter StyleTTS2 plus ISTFT
 
 OmniVoice is the ambition play in this repo. Upstream, it is a diffusion language model TTS stack aimed at omnilingual zero-shot speech generation with voice design and massive language coverage.
 
-**What works in tts-rs today**
+**What works in any-tts today**
 
 - Native Candle backend.
 - `language`, `instruct`, `cfg_scale`, and `max_tokens` request controls.
@@ -238,7 +238,7 @@ The code returns explicit errors for those cases instead of silently falling bac
 
 Qwen3-TTS is the control-heavy multilingual option. It uses a discrete multi-codebook language model plus a speech-tokenizer decoder and is designed for named speakers, instruction-following, and multiple TTS operating modes.
 
-**What works in tts-rs today**
+**What works in any-tts today**
 
 - Native Rust backend.
 - Default path points to `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`.
@@ -250,7 +250,7 @@ Qwen3-TTS is the control-heavy multilingual option. It uses a discrete multi-cod
 **Example: switch from CustomVoice to VoiceDesign**
 
 ```rust,no_run
-use tts_rs::{load_model, ModelType, SynthesisRequest, TtsConfig};
+use any_tts::{load_model, ModelType, SynthesisRequest, TtsConfig};
 
 let model = load_model(
     TtsConfig::new(ModelType::Qwen3Tts)
@@ -288,7 +288,7 @@ let audio = model.synthesize(
 
 Voxtral is the biggest public backend in the repo and the most obviously voice-agent-oriented. It pairs a language model with acoustic generation and preset voice embeddings, and the published checkpoint is tuned for multilingual, low-latency TTS deployment scenarios.
 
-**What works in tts-rs today**
+**What works in any-tts today**
 
 - Native Rust backend.
 - Preset voice selection from the checkpoint's `voice_embedding/` assets.
@@ -348,7 +348,7 @@ KugelAudio is the European-language-focused experimental backend that already li
 ### Local directory loading
 
 ```rust,no_run
-use tts_rs::{load_model, ModelType, TtsConfig};
+use any_tts::{load_model, ModelType, TtsConfig};
 
 let model = load_model(
     TtsConfig::new(ModelType::Kokoro)
@@ -359,7 +359,7 @@ let model = load_model(
 ### Explicit file-path loading
 
 ```rust,no_run
-use tts_rs::{load_model, ModelType, TtsConfig};
+use any_tts::{load_model, ModelType, TtsConfig};
 
 let model = load_model(
     TtsConfig::new(ModelType::Qwen3Tts)
@@ -374,8 +374,8 @@ let model = load_model(
 ### Device and dtype selection
 
 ```rust,no_run
-use tts_rs::config::DType;
-use tts_rs::{load_model, DeviceSelection, ModelType, TtsConfig};
+use any_tts::config::DType;
+use any_tts::{load_model, DeviceSelection, ModelType, TtsConfig};
 
 let model = load_model(
     TtsConfig::new(ModelType::OmniVoice)
@@ -411,4 +411,4 @@ The crate metadata declares `MIT OR Apache-2.0` for this repository's Rust code.
 
 ## Status
 
-This repo already has a strong shape: four public native backends, one obvious experimental fifth backend, trait-based loading, and example coverage for the core synthesis paths. The right way to think about it is not "a single-model wrapper" but "a Rust TTS platform layer that is learning how to speak multiple open ecosystems without hiding their differences."
+This repo already has a strong shape: five public native backends, one obvious experimental sixth backend, trait-based loading, and example coverage for the core synthesis paths. The right way to think about it is not "a single-model wrapper" but "a Rust TTS platform layer that is learning how to speak multiple open ecosystems without hiding their differences."

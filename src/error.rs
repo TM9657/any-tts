@@ -1,4 +1,4 @@
-//! Error types for tts-rs.
+//! Error types for any-tts.
 
 use thiserror::Error;
 

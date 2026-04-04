@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use tts_rs::mel::{MelConfig, MelSpectrogram};
+//! use any_tts::mel::{MelConfig, MelSpectrogram};
 //! use candle_core::Device;
 //!
 //! let mel = MelSpectrogram::new(MelConfig::kokoro(), &Device::Cpu)?;

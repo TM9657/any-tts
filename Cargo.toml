@@ -1,10 +1,10 @@
 [package]
-name = "tts-rs"
+name = "any-tts"
 version = "0.1.0"
 edition = "2021"
 description = "A Rust TTS library with Candle backends and runtime adapters for modern open TTS models"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/TM9657/tts-rs"
+repository = "https://github.com/TM9657/any-tts"
 keywords = ["tts", "text-to-speech", "candle", "ml", "audio"]
 categories = ["multimedia::audio", "science"]
 

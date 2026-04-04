@@ -833,12 +833,12 @@ impl DType {
 ///
 /// # Providing model files
 ///
-/// There are three ways to tell tts-rs where to find the model files,
+/// There are three ways to tell any-tts where to find the model files,
 /// listed from highest to lowest priority:
 ///
 /// 1. **Individual file paths** (for custom download managers):
 ///    ```rust
-///    # use tts_rs::{TtsConfig, ModelType};
+///    # use any_tts::{TtsConfig, ModelType};
 ///    let config = TtsConfig::new(ModelType::Qwen3Tts)
 ///        .with_config_file("/cache/sha256-abc/config.json")
 ///        .with_tokenizer_file("/cache/sha256-def/tokenizer.json")
@@ -847,14 +847,14 @@ impl DType {
 ///
 /// 2. **Directory path** (all files in one folder):
 ///    ```rust
-///    # use tts_rs::{TtsConfig, ModelType};
+///    # use any_tts::{TtsConfig, ModelType};
 ///    let config = TtsConfig::new(ModelType::Qwen3Tts)
 ///        .with_model_path("/models/qwen3-tts");
 ///    ```
 ///
 /// 3. **HuggingFace Hub download** (automatic fallback):
 ///    ```rust
-///    # use tts_rs::{TtsConfig, ModelType};
+///    # use any_tts::{TtsConfig, ModelType};
 ///    let config = TtsConfig::new(ModelType::Qwen3Tts); // downloads automatically
 ///    ```
 ///
@@ -990,7 +990,7 @@ impl TtsConfig {
     /// explicitly, or once for single-file models:
     ///
     /// ```rust
-    /// # use tts_rs::{TtsConfig, ModelType};
+    /// # use any_tts::{TtsConfig, ModelType};
     /// let config = TtsConfig::new(ModelType::Qwen3Tts)
     ///     .with_weight_file("/cache/model.safetensors");
     /// ```

@@ -15,3 +15,12 @@
 /models/
 .venv-*
 .codacy
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+.DS_Store

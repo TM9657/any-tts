@@ -171,7 +171,7 @@ pub trait TtsModel: Send + Sync {
 /// # Example
 ///
 /// ```rust
-/// use tts_rs::ReferenceAudio;
+/// use any_tts::ReferenceAudio;
 ///
 /// let audio = ReferenceAudio::new(vec![0.0f32; 24000], 24000);
 /// assert_eq!(audio.duration_secs(), 1.0);
@@ -286,7 +286,7 @@ impl VoiceEmbedding {
 /// # Example
 ///
 /// ```rust,ignore
-/// use tts_rs::{VoiceCloning, ReferenceAudio, SynthesisRequest};
+/// use any_tts::{VoiceCloning, ReferenceAudio, SynthesisRequest};
 ///
 /// if model.supports_voice_cloning() {
 ///     let reference = ReferenceAudio::new(samples, 24000);

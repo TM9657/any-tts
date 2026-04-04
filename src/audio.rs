@@ -248,7 +248,7 @@ impl AudioSamples {
     /// Requires the **`mp3`** Cargo feature:
     ///
     /// ```toml
-    /// tts-rs = { version = "0.1", features = ["mp3"] }
+    /// any-tts = { version = "0.1", features = ["mp3"] }
     /// ```
     #[cfg(feature = "mp3")]
     pub fn get_mp3(&self) -> Result<Vec<u8>, crate::TtsError> {

@@ -1,4 +1,4 @@
-//! # tts-rs
+//! # any-tts
 //!
 //! A Rust text-to-speech library powered primarily by the
 //! [candle](https://github.com/huggingface/candle) ML framework.
@@ -29,12 +29,12 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use tts_rs::{TtsModel, TtsConfig, SynthesisRequest, ModelType};
+//! use any_tts::{TtsModel, TtsConfig, SynthesisRequest, ModelType};
 //!
 //! // Load a model
 //! let config = TtsConfig::new(ModelType::Qwen3Tts)
 //!     .with_model_path("/path/to/model");
-//! let model = tts_rs::load_model(config).unwrap();
+//! let model = any_tts::load_model(config).unwrap();
 //!
 //! // Synthesize speech
 //! let request = SynthesisRequest::new("Hello, world!")

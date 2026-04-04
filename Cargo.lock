@@ -44,6 +44,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "any-tts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "espeak-rs",
+ "hf-hub",
+ "hound",
+ "mp3lame-encoder",
+ "rustc-hash",
+ "safetensors 0.7.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tiktoken-rs",
+ "tokenizers",
+ "tokio",
+ "tracing",
+ "zip",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3014,31 +3039,6 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
-
-[[package]]
-name = "tts-rs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "candle-core",
- "candle-nn",
- "candle-transformers",
- "espeak-rs",
- "hf-hub",
- "hound",
- "mp3lame-encoder",
- "rustc-hash",
- "safetensors 0.7.0",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tiktoken-rs",
- "tokenizers",
- "tokio",
- "tracing",
- "zip",
-]
 
 [[package]]
 name = "typed-path"
