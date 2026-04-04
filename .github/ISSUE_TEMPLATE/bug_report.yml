@@ -1,0 +1,92 @@
+name: Bug report
+description: Report a reproducible defect in a backend, loader, example, or docs path.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please fill in the details below so the issue can be reproduced.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: What broke?
+      placeholder: Native OmniVoice rejects a request that should succeed
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options:
+        - Kokoro
+        - OmniVoice
+        - Qwen3-TTS
+        - Voxtral
+        - KugelAudio experimental path
+        - Config or loader
+        - Docs or examples
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS, CPU/GPU, and Rust version if known
+      placeholder: macOS 15, Apple M3 Pro, rustc 1.xx
+    validations:
+      required: true
+
+  - type: input
+    id: features
+    attributes:
+      label: Feature flags
+      description: Cargo features used for the failing build or run
+      placeholder: omnivoice,download,metal
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Commands, code, or steps to reproduce the problem
+      render: bash
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Paste the relevant error output, stack trace, or panic message
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I verified this is not a security disclosure.
+          required: true
+        - label: I included enough detail to reproduce the problem.
+          required: true

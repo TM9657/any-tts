@@ -1,0 +1,54 @@
+name: Feature request
+description: Propose a new backend, capability, DX improvement, or docs addition.
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the problem first, then the change you want.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What is hard, missing, or unsupported today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the behavior you want and how you expect to use it
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Model backend
+        - Voice cloning
+        - File resolution or downloads
+        - Performance
+        - Examples
+        - Documentation
+        - Build features
+        - Tooling or CI
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and tradeoffs
+      description: Model license, hardware limits, API constraints, or compatibility concerns
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, code, benchmarks, or upstream references

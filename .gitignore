@@ -1,0 +1,17 @@
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
+
+
+# Added by cargo
+
+/target
+
+# Generated audio output
+/output/
+
+# Model weights (too large for git)
+/models/
+.venv-*
+.codacy
