@@ -42,7 +42,8 @@ impl Conv1d {
                 // Fall back to weight normalization: weight = g * (v / ||v||)
                 let weight_v = vb.get(weight_shape, "weight_v")?;
                 // PyTorch stores weight_g as [out, 1, 1]; try 3D first, then 1D
-                let weight_g = vb.get((out_channels, 1, 1), "weight_g")
+                let weight_g = vb
+                    .get((out_channels, 1, 1), "weight_g")
                     .or_else(|_| vb.get(out_channels, "weight_g"))?;
                 apply_weight_norm(&weight_v, &weight_g)?
             }
@@ -126,7 +127,8 @@ impl ConvTranspose1d {
             Err(_) => {
                 let weight_v = vb.get(weight_shape, "weight_v")?;
                 // PyTorch stores weight_g as [in, 1, 1]; try 3D first, then 1D
-                let weight_g = vb.get((in_channels, 1, 1), "weight_g")
+                let weight_g = vb
+                    .get((in_channels, 1, 1), "weight_g")
                     .or_else(|_| vb.get(in_channels, "weight_g"))?;
                 apply_weight_norm(&weight_v, &weight_g)?
             }
@@ -355,7 +357,9 @@ impl ChannelNorm {
         let var = x_centered.sqr()?.mean_keepdim(candle_core::D::Minus1)?;
         let x_normed = x_centered.broadcast_div(&(var + self.eps)?.sqrt()?)?;
         let x_normed = x_normed.to_dtype(dtype)?;
-        x_normed.broadcast_mul(&self.gamma)?.broadcast_add(&self.beta)
+        x_normed
+            .broadcast_mul(&self.gamma)?
+            .broadcast_add(&self.beta)
     }
 }
 

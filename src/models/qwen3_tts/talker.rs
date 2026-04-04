@@ -49,7 +49,12 @@ impl TalkerLm {
     /// Load the Talker LM from a VarBuilder.
     ///
     /// Expected weight prefix: `talker.` (e.g. `talker.text_embed.weight`).
-    pub fn load(config: &TalkerConfig, vb: VarBuilder, device: &Device, dtype: DType) -> Result<Self> {
+    pub fn load(
+        config: &TalkerConfig,
+        vb: VarBuilder,
+        device: &Device,
+        dtype: DType,
+    ) -> Result<Self> {
         let gqa_config = GqaConfig::with_head_dim(
             config.hidden_size,
             config.num_attention_heads,
@@ -100,11 +105,8 @@ impl TalkerLm {
         let norm = RmsNorm::load(config.hidden_size, config.rms_norm_eps, model_vb.pp("norm"))?;
 
         // Codec prediction head
-        let codec_head = candle_nn::linear_no_bias(
-            config.hidden_size,
-            config.vocab_size,
-            vb.pp("codec_head"),
-        )?;
+        let codec_head =
+            candle_nn::linear_no_bias(config.hidden_size, config.vocab_size, vb.pp("codec_head"))?;
 
         // Precompute RoPE
         let (rope_cos, rope_sin) = precompute_rope_freqs(
@@ -238,7 +240,9 @@ impl TalkerLm {
         // The callback runs the code predictor to predict groups 1-15, embeds them,
         // and returns the sum of all 16 group embeddings plus the predicted token IDs.
         // If None, falls back to group-0-only embedding (no code predictor).
-        mut predict_and_sum_fn: Option<&mut dyn FnMut(&Tensor, u32, &Tensor, &Device) -> Result<(Tensor, Vec<u32>)>>,
+        mut predict_and_sum_fn: Option<
+            &mut dyn FnMut(&Tensor, u32, &Tensor, &Device) -> Result<(Tensor, Vec<u32>)>,
+        >,
     ) -> Result<(Vec<u32>, Vec<Vec<u32>>)> {
         let _batch = text_embeds.dims()[0];
 
@@ -289,10 +293,16 @@ impl TalkerLm {
         let first_token = {
             let effective_temp = if temperature <= 0.0 { 1.0 } else { temperature };
             if temperature <= 0.0 {
-                first_logits.argmax(candle_core::D::Minus1)?.to_vec1::<u32>()?[0]
+                first_logits
+                    .argmax(candle_core::D::Minus1)?
+                    .to_vec1::<u32>()?[0]
             } else {
                 let scaled = (&first_logits / effective_temp)?;
-                let scaled = if top_k > 0 { top_k_filter(&scaled, top_k)? } else { scaled };
+                let scaled = if top_k > 0 {
+                    top_k_filter(&scaled, top_k)?
+                } else {
+                    scaled
+                };
                 let probs = candle_nn::ops::softmax_last_dim(&scaled)?;
                 multinomial_sample(&probs, device)?.to_vec1::<u32>()?[0]
             }
@@ -310,7 +320,8 @@ impl TalkerLm {
         let g0_token_tensor = Tensor::new(&[first_token], device)?.unsqueeze(0)?;
         let g0_embed = self.embed_codec(&g0_token_tensor)?;
 
-        let (summed_embed, step_group_tokens) = if let Some(ref mut predict_fn) = predict_and_sum_fn {
+        let (summed_embed, step_group_tokens) = if let Some(ref mut predict_fn) = predict_and_sum_fn
+        {
             // Reference: past_hidden = hidden_states[:, -1:, :] where hidden_states = outputs.last_hidden_state (POST-NORM)
             predict_fn(&last_hidden, first_token, &g0_embed, device)?
         } else {
@@ -401,15 +412,16 @@ impl TalkerLm {
             let g0_token_tensor = Tensor::new(&[next_token], device)?.unsqueeze(0)?;
             let g0_embed = self.embed_codec(&g0_token_tensor)?;
 
-            let (summed_embed, step_group_tokens) = if let Some(ref mut predict_fn) = predict_and_sum_fn {
-                // past_hidden is the POST-NORM last hidden state from the transformer
-                // (matching reference: past_hidden = hidden_states[:, -1:, :] where
-                //  hidden_states = outputs.last_hidden_state, which is after final RMS norm)
-                predict_fn(&last_hidden, next_token, &g0_embed, device)?
-            } else {
-                // Fallback: just use group-0 embedding
-                (g0_embed, vec![])
-            };
+            let (summed_embed, step_group_tokens) =
+                if let Some(ref mut predict_fn) = predict_and_sum_fn {
+                    // past_hidden is the POST-NORM last hidden state from the transformer
+                    // (matching reference: past_hidden = hidden_states[:, -1:, :] where
+                    //  hidden_states = outputs.last_hidden_state, which is after final RMS norm)
+                    predict_fn(&last_hidden, next_token, &g0_embed, device)?
+                } else {
+                    // Fallback: just use group-0 embedding
+                    (g0_embed, vec![])
+                };
             all_group_tokens.push(step_group_tokens);
 
             // Add trailing text hidden for text alignment.
@@ -485,7 +497,12 @@ fn rand_uniform() -> f32 {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0xdeadbeef);
-        let mut seed = [now, now.wrapping_mul(6364136223846793005), !now, now ^ 0x1234567890abcdef];
+        let mut seed = [
+            now,
+            now.wrapping_mul(6364136223846793005),
+            !now,
+            now ^ 0x1234567890abcdef,
+        ];
         // Warm up
         for _ in 0..8 {
             let t = seed[1] << 17;

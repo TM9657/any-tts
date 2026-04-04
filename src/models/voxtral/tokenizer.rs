@@ -74,7 +74,11 @@ impl VoxtralTokenizer {
             })?;
 
         let mut encoder = TekkenMap::default();
-        for entry in tekken.vocab.iter().filter(|entry| entry.rank < inner_vocab_size as u32) {
+        for entry in tekken
+            .vocab
+            .iter()
+            .filter(|entry| entry.rank < inner_vocab_size as u32)
+        {
             let token_bytes = base64::engine::general_purpose::STANDARD
                 .decode(&entry.token_bytes)
                 .map_err(|err| {

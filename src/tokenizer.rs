@@ -14,9 +14,8 @@ pub struct TextTokenizer {
 impl TextTokenizer {
     /// Load a tokenizer from a `tokenizer.json` file.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TtsError> {
-        let inner = tokenizers::Tokenizer::from_file(path.as_ref()).map_err(|e| {
-            TtsError::TokenizerError(format!("Failed to load tokenizer: {}", e))
-        })?;
+        let inner = tokenizers::Tokenizer::from_file(path.as_ref())
+            .map_err(|e| TtsError::TokenizerError(format!("Failed to load tokenizer: {}", e)))?;
         Ok(Self { inner })
     }
 
@@ -37,10 +36,7 @@ impl TextTokenizer {
 
         if vocab_path.exists() && merges_path.exists() {
             let inner = tokenizers::Tokenizer::from_file(&vocab_path).map_err(|e| {
-                TtsError::TokenizerError(format!(
-                    "Failed to load tokenizer from vocab.json: {}",
-                    e
-                ))
+                TtsError::TokenizerError(format!("Failed to load tokenizer from vocab.json: {}", e))
             })?;
             Ok(Self { inner })
         } else {

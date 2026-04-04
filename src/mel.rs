@@ -99,37 +99,27 @@ impl MelSpectrogram {
         let mut sin_data = vec![0f32; n_freq * n_fft];
         for k in 0..n_freq {
             for n in 0..n_fft {
-                let angle = 2.0 * std::f32::consts::PI * (k as f32) * (n as f32)
-                    / (n_fft as f32);
+                let angle = 2.0 * std::f32::consts::PI * (k as f32) * (n as f32) / (n_fft as f32);
                 cos_data[k * n_fft + n] = angle.cos();
                 sin_data[k * n_fft + n] = angle.sin();
             }
         }
-        let dft_cos =
-            Tensor::new(cos_data.as_slice(), device)?.reshape((n_freq, n_fft))?;
-        let dft_sin =
-            Tensor::new(sin_data.as_slice(), device)?.reshape((n_freq, n_fft))?;
+        let dft_cos = Tensor::new(cos_data.as_slice(), device)?.reshape((n_freq, n_fft))?;
+        let dft_sin = Tensor::new(sin_data.as_slice(), device)?.reshape((n_freq, n_fft))?;
 
         // ── Hann window (centre-padded to n_fft) ─────────────────────
         let mut window_data = vec![0f32; n_fft];
         let pad_left = (n_fft - config.win_length) / 2;
         for i in 0..config.win_length {
             let w = 0.5
-                * (1.0
-                    - (2.0 * std::f32::consts::PI * i as f32
-                        / config.win_length as f32)
-                        .cos());
+                * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / config.win_length as f32).cos());
             window_data[pad_left + i] = w;
         }
         let window = Tensor::new(window_data.as_slice(), device)?;
 
         // ── Mel filterbank ────────────────────────────────────────────
-        let mel_basis = Self::build_mel_filterbank(
-            config.n_mels,
-            n_freq,
-            config.sample_rate,
-            device,
-        )?;
+        let mel_basis =
+            Self::build_mel_filterbank(config.n_mels, n_freq, config.sample_rate, device)?;
 
         Ok(Self {
             config,
@@ -154,11 +144,7 @@ impl MelSpectrogram {
         let pad_len = n_fft / 2;
         let zeros_l = Tensor::zeros(pad_len, DType::F32, audio.device())?;
         let zeros_r_len = (n_samples + 2 * pad_len).saturating_sub(n_samples + pad_len);
-        let zeros_r = Tensor::zeros(
-            pad_len.max(zeros_r_len),
-            DType::F32,
-            audio.device(),
-        )?;
+        let zeros_r = Tensor::zeros(pad_len.max(zeros_r_len), DType::F32, audio.device())?;
         let padded = Tensor::cat(&[&zeros_l, &audio, &zeros_r], 0)?;
         let padded_len = padded.dim(0)?;
 
@@ -311,7 +297,7 @@ mod tests {
 
         assert_eq!(spec.dims()[0], 1); // batch
         assert_eq!(spec.dims()[1], 80); // n_mels
-        // num_frames ≈ (24000 + 2048) / 300 = ~86
+                                        // num_frames ≈ (24000 + 2048) / 300 = ~86
         assert!(spec.dims()[2] > 50);
     }
 

@@ -36,9 +36,7 @@ fn main() {
     let audio = model
         .synthesize(&request)
         .expect("Voxtral synthesis failed");
-    audio
-        .save_wav(&args.output)
-        .expect("Failed to write WAV");
+    audio.save_wav(&args.output).expect("Failed to write WAV");
 
     println!(
         "Saved Voxtral sample to {} ({} samples @ {} Hz)",

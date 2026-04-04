@@ -48,12 +48,8 @@ impl TtsModel for VoxtralModel {
         let compute_dtype = select_compute_dtype(config.dtype, &compute_device);
 
         let files = config.resolve_files()?;
-        let model_config = VoxtralConfig::from_file(
-            files
-                .config
-                .as_ref()
-                .expect("validated by resolve_files"),
-        )?;
+        let model_config =
+            VoxtralConfig::from_file(files.config.as_ref().expect("validated by resolve_files"))?;
         let tokenizer = VoxtralTokenizer::from_file(
             files
                 .tokenizer
@@ -63,7 +59,12 @@ impl TtsModel for VoxtralModel {
         )?;
 
         let main_vb = load_mmap_var_builder(&files.weights, compute_dtype, &compute_device)?;
-        let lm = MistralLm::load(&model_config, main_vb.clone(), &compute_device, compute_dtype)?;
+        let lm = MistralLm::load(
+            &model_config,
+            main_vb.clone(),
+            &compute_device,
+            compute_dtype,
+        )?;
         let acoustic_transformer = FlowMatchingAudioTransformer::load(
             &model_config.multimodal.audio_model_args,
             main_vb.pp("acoustic_transformer"),
@@ -71,7 +72,9 @@ impl TtsModel for VoxtralModel {
         let audio_codebook_embeddings = AudioCodebookEmbeddings::load(
             &model_config.multimodal.audio_model_args,
             model_config.dim,
-            main_vb.pp("mm_audio_embeddings").pp("audio_codebook_embeddings"),
+            main_vb
+                .pp("mm_audio_embeddings")
+                .pp("audio_codebook_embeddings"),
         )?;
 
         let audio_device = if matches!(compute_device, Device::Metal(_)) {
@@ -84,13 +87,12 @@ impl TtsModel for VoxtralModel {
         } else {
             compute_dtype
         };
-        let audio_vb = if same_device_kind(&audio_device, &compute_device)
-            && audio_dtype == compute_dtype
-        {
-            main_vb.clone()
-        } else {
-            load_mmap_var_builder(&files.weights, audio_dtype, &audio_device)?
-        };
+        let audio_vb =
+            if same_device_kind(&audio_device, &compute_device) && audio_dtype == compute_dtype {
+                main_vb.clone()
+            } else {
+                load_mmap_var_builder(&files.weights, audio_dtype, &audio_device)?
+            };
         let audio_decoder = VoxtralAudioDecoder::load(
             &model_config.multimodal.audio_tokenizer_args,
             audio_vb.pp("audio_tokenizer"),
@@ -112,9 +114,7 @@ impl TtsModel for VoxtralModel {
 
         info!(
             "Loading native Voxtral on {:?} ({:?} weights, {:?} audio decoder)",
-            compute_device,
-            compute_dtype,
-            audio_device
+            compute_device, compute_dtype, audio_device
         );
 
         Ok(Self {
@@ -182,7 +182,9 @@ impl TtsModel for VoxtralModel {
                 break;
             }
 
-            let next_embedding = self.audio_codebook_embeddings.embed_frame(&frame, &self.compute_device)?;
+            let next_embedding = self
+                .audio_codebook_embeddings
+                .embed_frame(&frame, &self.compute_device)?;
             let next_embedding = next_embedding.unsqueeze(0)?.unsqueeze(0)?;
             let step_hidden = lm.forward_embeddings(&next_embedding, prompt_len + step, None)?;
             last_hidden = step_hidden.squeeze(1)?.contiguous()?;
@@ -193,7 +195,10 @@ impl TtsModel for VoxtralModel {
             || generated_frames.last().map(|frame| frame[0]) != Some(END_AUDIO_TOKEN_ID)
         {
             generated_frames.push(make_terminal_frame(
-                self.model_config.multimodal.audio_model_args.n_acoustic_codebook,
+                self.model_config
+                    .multimodal
+                    .audio_model_args
+                    .n_acoustic_codebook,
             ));
         }
 
@@ -266,7 +271,9 @@ impl VoxtralModel {
             .find(|voice| voice.as_str() == "neutral_male")
             .cloned()
             .or_else(|| self.supported_voices.first().cloned())
-            .ok_or_else(|| TtsError::ConfigError("Voxtral preset voices are unavailable".to_string()))?;
+            .ok_or_else(|| {
+                TtsError::ConfigError("Voxtral preset voices are unavailable".to_string())
+            })?;
         let voice_name = request.voice.clone().unwrap_or(default_voice);
         let tensor = self
             .preset_voices
@@ -304,7 +311,12 @@ struct MistralFeedForward {
 }
 
 impl MistralFeedForward {
-    fn load(dim: usize, hidden_dim: usize, use_biases: bool, vb: VarBuilder) -> Result<Self, TtsError> {
+    fn load(
+        dim: usize,
+        hidden_dim: usize,
+        use_biases: bool,
+        vb: VarBuilder,
+    ) -> Result<Self, TtsError> {
         let w1 = candle_nn::linear_no_bias(dim, hidden_dim, vb.pp("w1"))?;
         let w2 = linear_with_optional_bias(hidden_dim, dim, use_biases, vb.pp("w2"))?;
         let w3 = candle_nn::linear_no_bias(dim, hidden_dim, vb.pp("w3"))?;
@@ -333,8 +345,10 @@ impl MistralAttention {
     fn load(config: &VoxtralConfig, vb: VarBuilder) -> Result<Self, TtsError> {
         let q_dim = config.n_heads * config.head_dim;
         let kv_dim = config.n_kv_heads * config.head_dim;
-        let q_proj = permuted_rope_linear(config.dim, config.n_heads, config.head_dim, vb.pp("wq"))?;
-        let k_proj = permuted_rope_linear(config.dim, config.n_kv_heads, config.head_dim, vb.pp("wk"))?;
+        let q_proj =
+            permuted_rope_linear(config.dim, config.n_heads, config.head_dim, vb.pp("wq"))?;
+        let k_proj =
+            permuted_rope_linear(config.dim, config.n_kv_heads, config.head_dim, vb.pp("wk"))?;
         let v_proj = linear_with_optional_bias(config.dim, kv_dim, false, vb.pp("wv"))?;
         let o_proj = linear_with_optional_bias(q_dim, config.dim, false, vb.pp("wo"))?;
         Ok(Self {
@@ -375,12 +389,21 @@ impl MistralAttention {
             .transpose(1, 2)?
             .contiguous()?;
 
-        let cos = rope_cos.narrow(0, start_pos, seq_len)?.unsqueeze(0)?.unsqueeze(0)?;
-        let sin = rope_sin.narrow(0, start_pos, seq_len)?.unsqueeze(0)?.unsqueeze(0)?;
+        let cos = rope_cos
+            .narrow(0, start_pos, seq_len)?
+            .unsqueeze(0)?
+            .unsqueeze(0)?;
+        let sin = rope_sin
+            .narrow(0, start_pos, seq_len)?
+            .unsqueeze(0)?
+            .unsqueeze(0)?;
         let (q, k) = apply_rotary_emb(&q, &k, &cos, &sin)?;
 
         let (k, v) = if let Some((cached_k, cached_v)) = &self.kv_cache {
-            (Tensor::cat(&[cached_k, &k], 2)?, Tensor::cat(&[cached_v, &v], 2)?)
+            (
+                Tensor::cat(&[cached_k, &k], 2)?,
+                Tensor::cat(&[cached_v, &v], 2)?,
+            )
         } else {
             (k, v)
         };
@@ -390,7 +413,9 @@ impl MistralAttention {
         let v = repeat_kv_heads(&v, self.num_heads / self.num_kv_heads)?;
 
         let k_t = k.transpose(2, 3)?.contiguous()?;
-        let attn_scores = q.matmul(&k_t)?.affine(1.0 / (self.head_dim as f64).sqrt(), 0.0)?;
+        let attn_scores = q
+            .matmul(&k_t)?
+            .affine(1.0 / (self.head_dim as f64).sqrt(), 0.0)?;
         let attn_scores = if let Some(mask) = mask {
             attn_scores.broadcast_add(mask)?
         } else {
@@ -398,9 +423,11 @@ impl MistralAttention {
         };
         let attn_probs = candle_nn::ops::softmax_last_dim(&attn_scores)?;
         let attn_output = attn_probs.matmul(&v)?;
-        let attn_output = attn_output
-            .transpose(1, 2)?
-            .reshape((batch_size, seq_len, self.num_heads * self.head_dim))?;
+        let attn_output = attn_output.transpose(1, 2)?.reshape((
+            batch_size,
+            seq_len,
+            self.num_heads * self.head_dim,
+        ))?;
         Ok(self.o_proj.forward(&attn_output)?)
     }
 
@@ -421,12 +448,8 @@ impl MistralBlock {
         let attention_norm = RmsNorm::load(config.dim, config.norm_eps, vb.pp("attention_norm"))?;
         let attention = MistralAttention::load(config, vb.pp("attention"))?;
         let ffn_norm = RmsNorm::load(config.dim, config.norm_eps, vb.pp("ffn_norm"))?;
-        let feed_forward = MistralFeedForward::load(
-            config.dim,
-            config.hidden_dim,
-            false,
-            vb.pp("feed_forward"),
-        )?;
+        let feed_forward =
+            MistralFeedForward::load(config.dim, config.hidden_dim, false, vb.pp("feed_forward"))?;
         Ok(Self {
             attention_norm,
             attention,
@@ -451,7 +474,9 @@ impl MistralBlock {
             mask,
         )?;
         let hidden = x.add(&attn)?;
-        let ff = self.feed_forward.forward(&self.ffn_norm.forward(&hidden)?)?;
+        let ff = self
+            .feed_forward
+            .forward(&self.ffn_norm.forward(&hidden)?)?;
         Ok(hidden.add(&ff)?)
     }
 
@@ -484,7 +509,10 @@ impl MistralLm {
 
         let mut layers = Vec::with_capacity(config.n_layers);
         for layer_index in 0..config.n_layers {
-            layers.push(MistralBlock::load(config, vb.pp(format!("layers.{layer_index}")))?);
+            layers.push(MistralBlock::load(
+                config,
+                vb.pp(format!("layers.{layer_index}")),
+            )?);
         }
 
         let (rope_cos, rope_sin) = precompute_rope_freqs(
@@ -603,14 +631,14 @@ impl BidirectionalAttention {
             .wq
             .forward(x)?
             .reshape((batch_size, seq_len, self.n_heads, self.head_dim))?;
-        let xk = self
-            .wk
-            .forward(x)?
-            .reshape((batch_size, seq_len, self.n_kv_heads, self.head_dim))?;
-        let xv = self
-            .wv
-            .forward(x)?
-            .reshape((batch_size, seq_len, self.n_kv_heads, self.head_dim))?;
+        let xk =
+            self.wk
+                .forward(x)?
+                .reshape((batch_size, seq_len, self.n_kv_heads, self.head_dim))?;
+        let xv =
+            self.wv
+                .forward(x)?
+                .reshape((batch_size, seq_len, self.n_kv_heads, self.head_dim))?;
 
         let xk = repeat_last_head_axis(&xk, self.n_heads / self.n_kv_heads)?;
         let xv = repeat_last_head_axis(&xv, self.n_heads / self.n_kv_heads)?;
@@ -619,12 +647,14 @@ impl BidirectionalAttention {
         let k = xk.transpose(1, 2)?.contiguous()?;
         let v = xv.transpose(1, 2)?.contiguous()?;
         let k_t = k.transpose(2, 3)?.contiguous()?;
-        let attn = q.matmul(&k_t)?.affine(1.0 / (self.head_dim as f64).sqrt(), 0.0)?;
+        let attn = q
+            .matmul(&k_t)?
+            .affine(1.0 / (self.head_dim as f64).sqrt(), 0.0)?;
         let attn = candle_nn::ops::softmax_last_dim(&attn)?;
         let out = attn.matmul(&v)?;
-        let out = out
-            .transpose(1, 2)?
-            .reshape((batch_size, seq_len, self.n_heads * self.head_dim))?;
+        let out =
+            out.transpose(1, 2)?
+                .reshape((batch_size, seq_len, self.n_heads * self.head_dim))?;
         Ok(self.wo.forward(&out)?)
     }
 }
@@ -658,7 +688,9 @@ impl AcousticTransformerBlock {
     fn forward(&self, x: &Tensor) -> Result<Tensor, TtsError> {
         let attn = self.attention.forward(&self.attention_norm.forward(x)?)?;
         let hidden = x.add(&attn)?;
-        let ff = self.feed_forward.forward(&self.ffn_norm.forward(&hidden)?)?;
+        let ff = self
+            .feed_forward
+            .forward(&self.ffn_norm.forward(&hidden)?)?;
         Ok(hidden.add(&ff)?)
     }
 }
@@ -685,8 +717,10 @@ impl FlowMatchingAudioTransformer {
             args.dim,
             vb.pp("input_projection"),
         )?;
-        let time_projection = candle_nn::linear_no_bias(args.dim, args.dim, vb.pp("time_projection"))?;
-        let llm_projection = candle_nn::linear_no_bias(args.input_dim, args.dim, vb.pp("llm_projection"))?;
+        let time_projection =
+            candle_nn::linear_no_bias(args.dim, args.dim, vb.pp("time_projection"))?;
+        let llm_projection =
+            candle_nn::linear_no_bias(args.input_dim, args.dim, vb.pp("llm_projection"))?;
 
         let semantic_vocab = model_args.get_codebook_sizes(Some(128), true)[0];
         let semantic_codebook_output = linear_with_optional_bias(
@@ -728,7 +762,10 @@ impl FlowMatchingAudioTransformer {
     }
 
     fn generate_frame(&self, llm_hidden: &Tensor) -> Result<Vec<u32>, TtsError> {
-        let semantic_logits = self.semantic_codebook_output.forward(llm_hidden)?.to_dtype(DType::F32)?;
+        let semantic_logits = self
+            .semantic_codebook_output
+            .forward(llm_hidden)?
+            .to_dtype(DType::F32)?;
         let semantic_code = select_semantic_code(
             &semantic_logits.squeeze(0)?,
             self.model_args.semantic_codebook_size,
@@ -739,7 +776,11 @@ impl FlowMatchingAudioTransformer {
         Ok(frame)
     }
 
-    fn decode_one_frame(&self, llm_hidden: &Tensor, semantic_code: u32) -> Result<Vec<u32>, TtsError> {
+    fn decode_one_frame(
+        &self,
+        llm_hidden: &Tensor,
+        semantic_code: u32,
+    ) -> Result<Vec<u32>, TtsError> {
         if semantic_code == END_AUDIO_TOKEN_ID {
             return Ok(std::iter::repeat_n(
                 EMPTY_AUDIO_TOKEN_ID,
@@ -751,7 +792,8 @@ impl FlowMatchingAudioTransformer {
         let n_acoustic = self.model_args.n_acoustic_codebook;
         let mut sampled = Tensor::randn(0f32, 1.0, (1, n_acoustic), llm_hidden.device())?
             .to_dtype(llm_hidden.dtype())?;
-        let zero_hidden = Tensor::zeros(llm_hidden.shape(), llm_hidden.dtype(), llm_hidden.device())?;
+        let zero_hidden =
+            Tensor::zeros(llm_hidden.shape(), llm_hidden.dtype(), llm_hidden.device())?;
 
         for window in self.timesteps.windows(2) {
             let time = window[0];
@@ -765,12 +807,11 @@ impl FlowMatchingAudioTransformer {
             let velocity = self.predict_velocity(&x_batched, &llm_batched, &t_batched)?;
             let cond = velocity.narrow(0, 0, 1)?;
             let uncond = velocity.narrow(0, 1, 1)?;
-            let guided = cond.broadcast_mul(&Tensor::new(&[CFG_ALPHA], llm_hidden.device())?.reshape((1, 1))?)?
-                .broadcast_add(
-                    &uncond.broadcast_mul(
-                        &Tensor::new(&[1.0 - CFG_ALPHA], llm_hidden.device())?.reshape((1, 1))?,
-                    )?,
-                )?;
+            let guided = cond
+                .broadcast_mul(&Tensor::new(&[CFG_ALPHA], llm_hidden.device())?.reshape((1, 1))?)?
+                .broadcast_add(&uncond.broadcast_mul(
+                    &Tensor::new(&[1.0 - CFG_ALPHA], llm_hidden.device())?.reshape((1, 1))?,
+                )?)?;
             sampled = sampled.add(&guided.affine(dt as f64, 0.0)?)?;
         }
 
@@ -822,7 +863,9 @@ impl AudioCodebookEmbeddings {
         let codebook_sizes = model_args.get_codebook_sizes(None, true);
         let total_vocab_size: usize = codebook_sizes.iter().sum();
         let padded_size = round_up_to_multiple(total_vocab_size, 128);
-        let weight = vb.pp("embeddings").get((padded_size, embedding_dim), "weight")?;
+        let weight = vb
+            .pp("embeddings")
+            .get((padded_size, embedding_dim), "weight")?;
 
         let mut offsets = Vec::with_capacity(codebook_sizes.len());
         let mut offset = 0u32;
@@ -858,7 +901,9 @@ impl SemanticCodebook {
             .to_dtype(DType::F32)?
             .clamp(1e-5, f64::MAX)?
             .unsqueeze(1)?;
-        let embedding = embedding_sum.to_dtype(DType::F32)?.broadcast_div(&cluster_usage)?;
+        let embedding = embedding_sum
+            .to_dtype(DType::F32)?
+            .broadcast_div(&cluster_usage)?;
         Ok(Self { embedding })
     }
 
@@ -1135,13 +1180,15 @@ impl CodecAttention {
         )?;
 
         let k_t = k.transpose(2, 3)?.contiguous()?;
-        let attn = q.matmul(&k_t)?.affine(1.0 / (self.head_dim as f64).sqrt(), 0.0)?;
+        let attn = q
+            .matmul(&k_t)?
+            .affine(1.0 / (self.head_dim as f64).sqrt(), 0.0)?;
         let attn = attn.broadcast_add(&bias)?;
         let attn = candle_nn::ops::softmax_last_dim(&attn)?;
         let out = attn.matmul(&v)?;
-        let out = out
-            .transpose(1, 2)?
-            .reshape((batch_size, seq_len, self.n_heads * self.head_dim))?;
+        let out =
+            out.transpose(1, 2)?
+                .reshape((batch_size, seq_len, self.n_heads * self.head_dim))?;
         Ok(self.wo.forward(&out)?)
     }
 }
@@ -1189,12 +1236,16 @@ impl CodecTransformerBlock {
     }
 
     fn forward(&self, x: &Tensor) -> Result<Tensor, TtsError> {
-        let mut attn = self.attention.forward(&self.attention_norm.forward(x)?, self.causal)?;
+        let mut attn = self
+            .attention
+            .forward(&self.attention_norm.forward(x)?, self.causal)?;
         if let Some(scale) = &self.attention_scale {
             attn = attn.broadcast_mul(scale)?;
         }
         let hidden = x.add(&attn)?;
-        let mut ff = self.feed_forward.forward(&self.ffn_norm.forward(&hidden)?)?;
+        let mut ff = self
+            .feed_forward
+            .forward(&self.ffn_norm.forward(&hidden)?)?;
         if let Some(scale) = &self.ffn_scale {
             ff = ff.broadcast_mul(scale)?;
         }
@@ -1207,7 +1258,11 @@ struct CodecTransformer {
 }
 
 impl CodecTransformer {
-    fn load(args: &AudioTokenizerArgs, num_layers: usize, vb: VarBuilder) -> Result<Self, TtsError> {
+    fn load(
+        args: &AudioTokenizerArgs,
+        num_layers: usize,
+        vb: VarBuilder,
+    ) -> Result<Self, TtsError> {
         let mut layers = Vec::with_capacity(num_layers);
         for layer_index in 0..num_layers {
             layers.push(CodecTransformerBlock::load(
@@ -1317,7 +1372,9 @@ impl VoxtralAudioDecoder {
                     )?,
                 ));
                 module_index += 1;
-                if args.half_attn_window_upon_downsampling && decoder_convs_strides[stage_index + 1] > 1 {
+                if args.half_attn_window_upon_downsampling
+                    && decoder_convs_strides[stage_index + 1] > 1
+                {
                     current_window *= 2;
                 }
             }
@@ -1378,7 +1435,9 @@ impl VoxtralAudioDecoder {
         let hidden = self.output_proj.forward(&hidden)?;
         let (_, _, frames) = hidden.dims3()?;
         let hidden = hidden.reshape((1, 1, self.patch_size, frames))?;
-        Ok(hidden.permute((0, 1, 3, 2))?.reshape((1, 1, frames * self.patch_size))?)
+        Ok(hidden
+            .permute((0, 1, 3, 2))?
+            .reshape((1, 1, frames * self.patch_size))?)
     }
 }
 
@@ -1432,10 +1491,7 @@ fn permute_mistral_rope_weight(
     if out_features != expected_out {
         return Err(TtsError::WeightLoadError(format!(
             "Unexpected Mistral attention weight shape ({}, {}) for {} heads x {} head_dim",
-            out_features,
-            in_features,
-            num_heads,
-            head_dim
+            out_features, in_features, num_heads, head_dim
         )));
     }
 
@@ -1452,7 +1508,9 @@ fn load_mmap_var_builder(
     device: &Device,
 ) -> Result<VarBuilder<'static>, TtsError> {
     if paths.is_empty() {
-        return Err(TtsError::FileMissing("consolidated.safetensors".to_string()));
+        return Err(TtsError::FileMissing(
+            "consolidated.safetensors".to_string(),
+        ));
     }
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(paths, dtype, device)? };
     Ok(vb)
@@ -1550,13 +1608,13 @@ fn load_voice_tensor(
     })?;
     let mut raw = Vec::with_capacity(frames * hidden_size * elem_size);
     entry.read_to_end(&mut raw)?;
-    let tensor = Tensor::from_raw_buffer(
-        &raw,
-        storage_dtype,
-        &[frames, hidden_size],
-        &Device::Cpu,
-    )?;
-    normalize_voice_embedding(tensor.to_device(device)?.to_dtype(dtype)?, hidden_size, dtype)
+    let tensor =
+        Tensor::from_raw_buffer(&raw, storage_dtype, &[frames, hidden_size], &Device::Cpu)?;
+    normalize_voice_embedding(
+        tensor.to_device(device)?.to_dtype(dtype)?,
+        hidden_size,
+        dtype,
+    )
 }
 
 fn normalize_voice_embedding(
@@ -1627,7 +1685,9 @@ fn select_semantic_code(logits: &Tensor, semantic_vocab_size: usize) -> Result<u
         .iter()
         .copied()
         .enumerate()
-        .max_by(|(_, left), (_, right)| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|(_, left), (_, right)| {
+            left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+        })
         .ok_or_else(|| TtsError::ModelError("Empty semantic logits tensor".to_string()))?;
     Ok(index as u32)
 }
@@ -1655,12 +1715,12 @@ fn make_terminal_frame(n_acoustic_codebooks: usize) -> Vec<u32> {
 
 fn log_generated_frame_summary(prompt_len: usize, frames: &[Vec<u32>]) {
     let semantic_codes: Vec<u32> = frames.iter().map(|frame| frame[0]).collect();
-    let unique_semantic_codes = semantic_codes.iter().copied().collect::<BTreeSet<_>>().len();
-    let first_semantic_codes = semantic_codes
+    let unique_semantic_codes = semantic_codes
         .iter()
-        .take(16)
         .copied()
-        .collect::<Vec<_>>();
+        .collect::<BTreeSet<_>>()
+        .len();
+    let first_semantic_codes = semantic_codes.iter().take(16).copied().collect::<Vec<_>>();
     let first_frame = frames.first().cloned().unwrap_or_default();
     let ended = semantic_codes
         .last()
@@ -1680,13 +1740,22 @@ fn log_generated_frame_summary(prompt_len: usize, frames: &[Vec<u32>]) {
 }
 
 fn detect_pytorch_storage_dtype(metadata: &[u8], path: &Path) -> Result<DType, TtsError> {
-    if metadata.windows("BFloat16Storage".len()).any(|window| window == b"BFloat16Storage") {
+    if metadata
+        .windows("BFloat16Storage".len())
+        .any(|window| window == b"BFloat16Storage")
+    {
         return Ok(DType::BF16);
     }
-    if metadata.windows("HalfStorage".len()).any(|window| window == b"HalfStorage") {
+    if metadata
+        .windows("HalfStorage".len())
+        .any(|window| window == b"HalfStorage")
+    {
         return Ok(DType::F16);
     }
-    if metadata.windows("FloatStorage".len()).any(|window| window == b"FloatStorage") {
+    if metadata
+        .windows("FloatStorage".len())
+        .any(|window| window == b"FloatStorage")
+    {
         return Ok(DType::F32);
     }
 
@@ -1738,7 +1807,9 @@ fn round_up_to_multiple(value: usize, multiple: usize) -> usize {
 fn alibi_slopes(num_heads: usize) -> Vec<f32> {
     fn slopes_power_of_two(num_heads: usize) -> Vec<f32> {
         let ratio = 2.0f32.powf(-8.0 / num_heads as f32);
-        (0..num_heads).map(|index| ratio.powi(index as i32)).collect()
+        (0..num_heads)
+            .map(|index| ratio.powi(index as i32))
+            .collect()
     }
 
     if (num_heads as f64).log2().fract() == 0.0 {
@@ -1800,11 +1871,19 @@ fn pad_constant_zero(x: &Tensor, left: usize, right: usize) -> Result<Tensor, Tt
     let (batch_size, channels, _) = x.dims3()?;
     let mut pieces = Vec::new();
     if left > 0 {
-        pieces.push(Tensor::zeros((batch_size, channels, left), x.dtype(), x.device())?);
+        pieces.push(Tensor::zeros(
+            (batch_size, channels, left),
+            x.dtype(),
+            x.device(),
+        )?);
     }
     pieces.push(x.clone());
     if right > 0 {
-        pieces.push(Tensor::zeros((batch_size, channels, right), x.dtype(), x.device())?);
+        pieces.push(Tensor::zeros(
+            (batch_size, channels, right),
+            x.dtype(),
+            x.device(),
+        )?);
     }
     let refs = pieces.iter().collect::<Vec<_>>();
     Ok(Tensor::cat(&refs, 2)?)

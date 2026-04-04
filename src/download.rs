@@ -20,17 +20,15 @@ use crate::error::TtsError;
 /// Returns [`TtsError::WeightLoadError`] if the file cannot be fetched
 /// (network error, file not found in repo, etc.).
 #[cfg(feature = "download")]
-pub fn download_file(
-    model_id: &str,
-    filename: &str,
-) -> Result<std::path::PathBuf, TtsError> {
+pub fn download_file(model_id: &str, filename: &str) -> Result<std::path::PathBuf, TtsError> {
     use hf_hub::api::sync::Api;
     use tracing::info;
 
     let api = Api::new().map_err(|e| {
-        TtsError::IoError(std::io::Error::other(
-            format!("Failed to initialize HF Hub API: {}", e),
-        ))
+        TtsError::IoError(std::io::Error::other(format!(
+            "Failed to initialize HF Hub API: {}",
+            e
+        )))
     })?;
 
     let repo = api.model(model_id.to_string());
@@ -50,10 +48,7 @@ pub fn download_file(
 ///
 /// Returns the cache directory containing the downloaded files.
 #[cfg(feature = "download")]
-pub fn download_model(
-    model_id: &str,
-    filenames: &[&str],
-) -> Result<std::path::PathBuf, TtsError> {
+pub fn download_model(model_id: &str, filenames: &[&str]) -> Result<std::path::PathBuf, TtsError> {
     use tracing::info;
 
     info!("Downloading model {} from HuggingFace Hub", model_id);
@@ -67,9 +62,8 @@ pub fn download_model(
         }
     }
 
-    let first = first_path.ok_or_else(|| {
-        TtsError::WeightLoadError("No files to download".to_string())
-    })?;
+    let first =
+        first_path.ok_or_else(|| TtsError::WeightLoadError("No files to download".to_string()))?;
 
     let model_dir = first.parent().unwrap_or(&first).to_path_buf();
     info!("Model files cached at: {}", model_dir.display());

@@ -26,7 +26,9 @@
 //! ```
 
 use candle_core::{DType, Device, IndexOp, Result, Tensor};
-use candle_nn::{Conv1d, Conv1dConfig, ConvTranspose1d, ConvTranspose1dConfig, Linear, Module, VarBuilder};
+use candle_nn::{
+    Conv1d, Conv1dConfig, ConvTranspose1d, ConvTranspose1dConfig, Linear, Module, VarBuilder,
+};
 
 use crate::tensor_utils::{apply_rotary_emb, precompute_rope_freqs, snake_beta};
 
@@ -149,15 +151,15 @@ struct RvqLayer {
 }
 
 impl RvqLayer {
-    fn load(num_layers: usize, codebook_size: usize, embed_dim: usize, vb: VarBuilder) -> Result<Self> {
+    fn load(
+        num_layers: usize,
+        codebook_size: usize,
+        embed_dim: usize,
+        vb: VarBuilder,
+    ) -> Result<Self> {
         // output_proj: Conv1d(vq_embed_dim=256, quantizer_dim=512, 1) — no bias
-        let output_proj = candle_nn::conv1d_no_bias(
-            256,
-            512,
-            1,
-            Conv1dConfig::default(),
-            vb.pp("output_proj"),
-        )?;
+        let output_proj =
+            candle_nn::conv1d_no_bias(256, 512, 1, Conv1dConfig::default(), vb.pp("output_proj"))?;
         let vq_vb = vb.pp("vq");
         let mut codebooks = Vec::with_capacity(num_layers);
         for i in 0..num_layers {
@@ -180,11 +182,7 @@ impl RvqLayer {
         let (batch, _n_layers, seq_len) = tokens.dims3()?;
 
         // Sum all codebook lookups in VQ space (256-d)
-        let mut summed = Tensor::zeros(
-            (batch, seq_len, 256),
-            DType::F32,
-            tokens.device(),
-        )?;
+        let mut summed = Tensor::zeros((batch, seq_len, 256), DType::F32, tokens.device())?;
         for i in 0..num_layers {
             let layer_tokens = tokens.i((.., i, ..))?; // (batch, seq_len)
             let emb = self.codebooks[i].forward(&layer_tokens)?; // (batch, seq_len, 256)
@@ -237,22 +235,15 @@ impl PreTransformerLayer {
         let attn_vb = vb.pp("self_attn");
         let q_dim = num_heads * head_dim;
         let kv_dim = num_kv_heads * head_dim;
-        let q_proj =
-            candle_nn::linear_no_bias(hidden, q_dim, attn_vb.pp("q_proj"))?;
-        let k_proj =
-            candle_nn::linear_no_bias(hidden, kv_dim, attn_vb.pp("k_proj"))?;
-        let v_proj =
-            candle_nn::linear_no_bias(hidden, kv_dim, attn_vb.pp("v_proj"))?;
-        let o_proj =
-            candle_nn::linear_no_bias(q_dim, hidden, attn_vb.pp("o_proj"))?;
+        let q_proj = candle_nn::linear_no_bias(hidden, q_dim, attn_vb.pp("q_proj"))?;
+        let k_proj = candle_nn::linear_no_bias(hidden, kv_dim, attn_vb.pp("k_proj"))?;
+        let v_proj = candle_nn::linear_no_bias(hidden, kv_dim, attn_vb.pp("v_proj"))?;
+        let o_proj = candle_nn::linear_no_bias(q_dim, hidden, attn_vb.pp("o_proj"))?;
 
         let mlp_vb = vb.pp("mlp");
-        let gate_proj =
-            candle_nn::linear_no_bias(hidden, intermediate, mlp_vb.pp("gate_proj"))?;
-        let up_proj =
-            candle_nn::linear_no_bias(hidden, intermediate, mlp_vb.pp("up_proj"))?;
-        let down_proj =
-            candle_nn::linear_no_bias(intermediate, hidden, mlp_vb.pp("down_proj"))?;
+        let gate_proj = candle_nn::linear_no_bias(hidden, intermediate, mlp_vb.pp("gate_proj"))?;
+        let up_proj = candle_nn::linear_no_bias(hidden, intermediate, mlp_vb.pp("up_proj"))?;
+        let down_proj = candle_nn::linear_no_bias(intermediate, hidden, mlp_vb.pp("down_proj"))?;
 
         let self_attn_layer_scale = vb.pp("self_attn_layer_scale").get(hidden, "scale")?;
         let mlp_layer_scale = vb.pp("mlp_layer_scale").get(hidden, "scale")?;
@@ -274,7 +265,13 @@ impl PreTransformerLayer {
         })
     }
 
-    fn forward(&self, x: &Tensor, rope_cos: &Tensor, rope_sin: &Tensor, causal_mask: &Tensor) -> Result<Tensor> {
+    fn forward(
+        &self,
+        x: &Tensor,
+        rope_cos: &Tensor,
+        rope_sin: &Tensor,
+        causal_mask: &Tensor,
+    ) -> Result<Tensor> {
         let (batch, seq_len, _) = x.dims3()?;
 
         // Self-attention with pre-norm
@@ -367,11 +364,8 @@ impl PreTransformer {
             )?);
         }
 
-        let norm = crate::tensor_utils::RmsNorm::load(
-            config.pre_transformer_hidden,
-            1e-5,
-            vb.pp("norm"),
-        )?;
+        let norm =
+            crate::tensor_utils::RmsNorm::load(config.pre_transformer_hidden, 1e-5, vb.pp("norm"))?;
 
         // Precompute RoPE for up to 4096 positions (speech tokenizer codec sequences).
         // Use the model's dtype (BF16 on Metal) to avoid dtype mismatch during RoPE application.
@@ -408,7 +402,11 @@ impl PreTransformer {
         let mask_data: Vec<f32> = (0..seq_len)
             .flat_map(|i| {
                 (0..seq_len).map(move |j| {
-                    if j <= i && i - j < sliding_window { 0.0f32 } else { f32::NEG_INFINITY }
+                    if j <= i && i - j < sliding_window {
+                        0.0f32
+                    } else {
+                        f32::NEG_INFINITY
+                    }
                 })
             })
             .collect();
@@ -474,7 +472,7 @@ impl ConvNeXtBlock {
         let h = self.dwconv.forward(&causal_pad(x, 6)?)?;
         // Layer norm over channels: transpose → normalize → transpose
         let h = h.transpose(1, 2)?; // (batch, seq, ch)
-        // Manual LayerNorm
+                                    // Manual LayerNorm
         let mean = h.mean_keepdim(candle_core::D::Minus1)?;
         let h_centered = h.broadcast_sub(&mean)?;
         let var = h_centered.sqr()?.mean_keepdim(candle_core::D::Minus1)?;
@@ -697,17 +695,23 @@ impl SpeechTokenizerDecoder {
     /// Load the speech tokenizer decoder from a VarBuilder.
     ///
     /// Expected weight prefix: `decoder.` from `Qwen/Qwen3-TTS-Tokenizer-12Hz`.
-    pub fn load(
-        config: &SpeechTokenizerConfig,
-        vb: VarBuilder,
-        device: &Device,
-    ) -> Result<Self> {
+    pub fn load(config: &SpeechTokenizerConfig, vb: VarBuilder, device: &Device) -> Result<Self> {
         let dec_vb = vb.pp("decoder");
 
         // ── Quantizer ──
         let q_vb = dec_vb.pp("quantizer");
-        let rvq_first = RvqLayer::load(1, config.codebook_size, config.vq_embed_dim, q_vb.pp("rvq_first"))?;
-        let rvq_rest = RvqLayer::load(config.num_groups - 1, config.codebook_size, config.vq_embed_dim, q_vb.pp("rvq_rest"))?;
+        let rvq_first = RvqLayer::load(
+            1,
+            config.codebook_size,
+            config.vq_embed_dim,
+            q_vb.pp("rvq_first"),
+        )?;
+        let rvq_rest = RvqLayer::load(
+            config.num_groups - 1,
+            config.codebook_size,
+            config.vq_embed_dim,
+            q_vb.pp("rvq_rest"),
+        )?;
 
         // ── Pre-conv: CausalConv1d(512, 1024, k=3) — left_pad=2, no built-in padding ──
         let pre_conv = candle_nn::conv1d(

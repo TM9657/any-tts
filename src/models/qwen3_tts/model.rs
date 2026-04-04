@@ -70,41 +70,42 @@ impl TtsModel for Qwen3TtsModel {
         let vb = ModelFiles::load_safetensors_vb(&files.weights, dtype, &device)?;
 
         // ── Build Talker LM ──────────────────────────────────────────
-        let talker = TalkerLm::load(
-            &model_config.talker_config,
-            vb.pp("talker"),
-            &device,
-            dtype,
-        )
-        .map_err(|e| TtsError::WeightLoadError(format!("Failed to build Talker LM: {}", e)))?;
-        info!("Talker LM loaded ({} layers)", model_config.talker_config.num_hidden_layers);
+        let talker = TalkerLm::load(&model_config.talker_config, vb.pp("talker"), &device, dtype)
+            .map_err(|e| {
+            TtsError::WeightLoadError(format!("Failed to build Talker LM: {}", e))
+        })?;
+        info!(
+            "Talker LM loaded ({} layers)",
+            model_config.talker_config.num_hidden_layers
+        );
 
         // ── Build Code Predictor ──────────────────────────────────────
-        let code_predictor = if let Some(ref cp_config) = model_config.talker_config.code_predictor_config {
-            let cp = CodePredictor::load(
-                cp_config,
-                model_config.talker_config.hidden_size,
-                vb.pp("talker").pp("code_predictor"),
-                &device,
-                dtype,
-            )
-            .map_err(|e| {
-                TtsError::WeightLoadError(format!("Failed to build Code Predictor: {}", e))
-            })?;
-            info!("Code Predictor loaded ({} layers)", cp_config.num_hidden_layers);
-            Some(cp)
-        } else {
-            info!("No code_predictor_config found; single-group mode");
-            None
-        };
+        let code_predictor =
+            if let Some(ref cp_config) = model_config.talker_config.code_predictor_config {
+                let cp = CodePredictor::load(
+                    cp_config,
+                    model_config.talker_config.hidden_size,
+                    vb.pp("talker").pp("code_predictor"),
+                    &device,
+                    dtype,
+                )
+                .map_err(|e| {
+                    TtsError::WeightLoadError(format!("Failed to build Code Predictor: {}", e))
+                })?;
+                info!(
+                    "Code Predictor loaded ({} layers)",
+                    cp_config.num_hidden_layers
+                );
+                Some(cp)
+            } else {
+                info!("No code_predictor_config found; single-group mode");
+                None
+            };
 
         // ── Load speech tokenizer weights ─────────────────────────────
         let speech_tokenizer = if !files.speech_tokenizer_weights.is_empty() {
-            let st_vb = ModelFiles::load_safetensors_vb(
-                &files.speech_tokenizer_weights,
-                dtype,
-                &device,
-            )?;
+            let st_vb =
+                ModelFiles::load_safetensors_vb(&files.speech_tokenizer_weights, dtype, &device)?;
             let st_config = SpeechTokenizerConfig {
                 num_groups: model_config.talker_config.num_code_groups,
                 ..SpeechTokenizerConfig::default()
@@ -148,8 +149,13 @@ impl TtsModel for Qwen3TtsModel {
 
         info!("Input sequence shape: {:?}", full_input.shape());
 
-        let (codec_tokens_g0, hidden_states) =
-            self.generate_codec_tokens(&full_input, &trailing_text_hidden, speaker_id, language_id, request)?;
+        let (codec_tokens_g0, hidden_states) = self.generate_codec_tokens(
+            &full_input,
+            &trailing_text_hidden,
+            speaker_id,
+            language_id,
+            request,
+        )?;
         let all_codes = self.assemble_all_codes(&codec_tokens_g0, &hidden_states)?;
         let samples = self.decode_to_audio(&all_codes)?;
 
@@ -187,7 +193,10 @@ impl TtsModel for Qwen3TtsModel {
         };
         ModelInfo {
             name,
-            variant: format!("{} ({})", self.config.tts_model_type, self.config.tokenizer_type),
+            variant: format!(
+                "{} ({})",
+                self.config.tts_model_type, self.config.tokenizer_type
+            ),
             parameters: 1_700_000_000,
             sample_rate: 24000,
             languages: self.supported_languages(),
@@ -322,18 +331,13 @@ impl Qwen3TtsModel {
     }
 
     /// Resolve speaker and language IDs from the request.
-    fn resolve_speaker_language(
-        &self,
-        request: &SynthesisRequest,
-    ) -> (Option<u32>, Option<u32>) {
+    fn resolve_speaker_language(&self, request: &SynthesisRequest) -> (Option<u32>, Option<u32>) {
         let speaker_id = request
             .voice
             .as_deref()
             .and_then(|v| self.config.talker_config.spk_id.get(v).copied());
 
-        let lang_str = self.normalize_language(
-            request.language.as_deref().unwrap_or("auto"),
-        );
+        let lang_str = self.normalize_language(request.language.as_deref().unwrap_or("auto"));
         let language_id = self
             .config
             .talker_config
@@ -507,7 +511,10 @@ impl Qwen3TtsModel {
             .embed_text(&trailing_ids_tensor)
             .map_err(TtsError::ComputeError)?;
 
-        info!("trailing_text_hidden len={} (non-streaming: tts_pad only)", trailing_ids.len());
+        info!(
+            "trailing_text_hidden len={} (non-streaming: tts_pad only)",
+            trailing_ids.len()
+        );
 
         Ok((combined, trailing_text_hidden))
     }
@@ -542,7 +549,11 @@ impl Qwen3TtsModel {
         let (codec_tokens_g0, group_tokens) = if has_cp {
             let cp_mutex = self.code_predictor.as_ref().unwrap();
             let device = self.device.clone();
-            let mut predict_fn = |past_hidden: &Tensor, g0_token: u32, g0_embed: &Tensor, dev: &Device| -> candle_core::Result<(Tensor, Vec<u32>)> {
+            let mut predict_fn = |past_hidden: &Tensor,
+                                  g0_token: u32,
+                                  g0_embed: &Tensor,
+                                  dev: &Device|
+             -> candle_core::Result<(Tensor, Vec<u32>)> {
                 let mut cp = cp_mutex.lock().unwrap();
                 cp.predict_step_and_sum(past_hidden, g0_token, g0_embed, dev)
             };
@@ -691,7 +702,10 @@ impl std::fmt::Debug for Qwen3TtsModel {
         f.debug_struct("Qwen3TtsModel")
             .field("config_type", &self.config.tts_model_type)
             .field("device", &self.device)
-            .field("talker_layers", &self.config.talker_config.num_hidden_layers)
+            .field(
+                "talker_layers",
+                &self.config.talker_config.num_hidden_layers,
+            )
             .field("has_code_predictor", &self.code_predictor.is_some())
             .field("has_speech_tokenizer", &self.speech_tokenizer.is_some())
             .finish()

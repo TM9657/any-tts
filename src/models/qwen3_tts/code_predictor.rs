@@ -183,14 +183,19 @@ impl CodePredictor {
         // position 1 can see both (matching HuggingFace's causal mask behavior).
         let prefill_mask = {
             let mask_data = vec![0.0f32, f32::NEG_INFINITY, 0.0f32, 0.0f32];
-            let mask = Tensor::from_vec(mask_data, (2, 2), device)?
-                .to_dtype(hidden.dtype())?;
+            let mask = Tensor::from_vec(mask_data, (2, 2), device)?.to_dtype(hidden.dtype())?;
             mask.unsqueeze(0)?.unsqueeze(0)?
         };
 
         // Run transformer on prefill with real RoPE and causal mask
         for layer in &mut self.layers {
-            hidden = layer.forward(&hidden, &self.rope_cos, &self.rope_sin, 0, Some(&prefill_mask))?;
+            hidden = layer.forward(
+                &hidden,
+                &self.rope_cos,
+                &self.rope_sin,
+                0,
+                Some(&prefill_mask),
+            )?;
         }
 
         let hidden = self.norm.forward(&hidden)?;
@@ -243,7 +248,6 @@ impl CodePredictor {
 
         Ok((summed, predicted_tokens))
     }
-
 }
 
 impl std::fmt::Debug for CodePredictor {
@@ -259,12 +263,7 @@ impl std::fmt::Debug for CodePredictor {
 /// Sample a token from logits using top-k + top-p (nucleus) filtering.
 ///
 /// Reference: code predictor uses do_sample=True, top_k=50, top_p=0.8.
-fn sample_top_k_top_p(
-    logits: &Tensor,
-    top_k: usize,
-    top_p: f32,
-    _device: &Device,
-) -> Result<u32> {
+fn sample_top_k_top_p(logits: &Tensor, top_k: usize, top_p: f32, _device: &Device) -> Result<u32> {
     // Flatten logits to 1D
     let flat: Vec<f32> = logits
         .to_dtype(candle_core::DType::F32)?

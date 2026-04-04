@@ -6,11 +6,11 @@
 //! Add `metal` on Apple builds or `cuda` on NVIDIA builds to enable faster
 //! backends.
 
+use any_tts::{load_model, DeviceSelection, ModelType, SynthesisRequest, TtsConfig};
 use serde::Deserialize;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use any_tts::{load_model, DeviceSelection, ModelType, SynthesisRequest, TtsConfig};
 
 #[derive(Debug, Deserialize)]
 struct VibeVoiceExampleConfig {
@@ -35,6 +35,7 @@ fn main() {
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(example.max_tokens);
+    let output_path = env::var("VIBEVOICE_OUTPUT").unwrap_or_else(|_| example.output.clone());
     let device = match env::var("VIBEVOICE_DEVICE").ok().as_deref() {
         Some("cpu") => DeviceSelection::Cpu,
         Some("metal") => DeviceSelection::Metal(0),
@@ -53,18 +54,21 @@ fn main() {
         .synthesize(&request)
         .expect("VibeVoice synthesis failed");
 
-    let output_path = PathBuf::from(&example.output);
-    if let Some(parent) = output_path.parent().filter(|path| !path.as_os_str().is_empty()) {
+    let output_path = PathBuf::from(&output_path);
+    if let Some(parent) = output_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent)
             .unwrap_or_else(|err| panic!("Failed to create {}: {err}", parent.display()));
     }
     audio
-        .save_wav(Path::new(&example.output))
+        .save_wav(Path::new(&output_path))
         .expect("Failed to write WAV");
 
     println!(
         "Saved VibeVoice sample to {} ({} samples @ {} Hz)",
-        example.output,
+        output_path.display(),
         audio.len(),
         audio.sample_rate
     );

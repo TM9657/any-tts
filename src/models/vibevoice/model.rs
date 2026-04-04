@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use candle_core::{DType, Device, Result as CandleResult, Tensor};
@@ -15,21 +16,22 @@ use crate::tokenizer::TextTokenizer;
 use crate::traits::{ModelInfo, SynthesisRequest, TtsModel};
 
 use super::config::{
-    VibeVoiceConfig,
-    VibeVoiceDecoderConfig,
-    VibeVoicePreprocessorConfig,
-    VibeVoiceTokenizerConfig,
+    VibeVoiceConfig, VibeVoiceDecoderConfig, VibeVoicePreprocessorConfig, VibeVoiceTokenizerConfig,
 };
 use super::diffusion::{DpmSolverMultistepScheduler, VibeVoiceDiffusionHead};
+use super::generation::{
+    random_normal_tensor, DiffusionNoiseCursor, DiffusionNoiseFixture, SimpleRng,
+    TokenSequenceState,
+};
 use super::processor::{PreparedVibeVoiceInput, VibeVoiceProcessor, VibeVoiceTokenizerSpec};
 use super::speech_tokenizer::{
-    VibeVoiceAcousticTokenizer,
-    VibeVoiceSemanticTokenizer,
-    VibeVoiceTokenizerEncoderOutput,
+    VibeVoiceAcousticTokenizer, VibeVoiceSemanticTokenizer, VibeVoiceTokenizerEncoderOutput,
 };
 
 const DEFAULT_CFG_SCALE: f32 = 3.0;
 const DEFAULT_GENERATION_SEED: u64 = 299_792_458;
+const VIBEVOICE_NOISE_PATH_ENV: &str = "VIBEVOICE_NOISE_PATH";
+const VIBEVOICE_SEED_ENV: &str = "VIBEVOICE_SEED";
 
 struct SpeechConnector {
     fc1: Linear,
@@ -105,11 +107,8 @@ impl VibeVoiceLanguageModel {
         )
         .with_attention_bias(config.attention_bias);
 
-        let embed_tokens = candle_nn::embedding(
-            config.vocab_size,
-            config.hidden_size,
-            vb.pp("embed_tokens"),
-        )?;
+        let embed_tokens =
+            candle_nn::embedding(config.vocab_size, config.hidden_size, vb.pp("embed_tokens"))?;
 
         let mut layers = Vec::with_capacity(config.num_hidden_layers);
         for index in 0..config.num_hidden_layers {
@@ -168,13 +167,7 @@ impl VibeVoiceLanguageModel {
 
         let mut hidden = input_embeds.clone();
         for layer in &mut self.layers {
-            hidden = layer.forward(
-                &hidden,
-                &self.rope_cos,
-                &self.rope_sin,
-                0,
-                mask.as_ref(),
-            )?;
+            hidden = layer.forward(&hidden, &self.rope_cos, &self.rope_sin, 0, mask.as_ref())?;
         }
         self.norm.forward(&hidden)
     }
@@ -217,9 +210,8 @@ impl TtsModel for VibeVoiceModel {
         }
 
         let files = config.resolve_files()?;
-        let model_config = VibeVoiceConfig::from_file(
-            files.config.as_ref().expect("validated by resolve_files"),
-        )?;
+        let model_config =
+            VibeVoiceConfig::from_file(files.config.as_ref().expect("validated by resolve_files"))?;
         let preprocessor_config = if let Some(path) = &files.preprocessor_config {
             VibeVoicePreprocessorConfig::from_file(path)?
         } else {
@@ -233,7 +225,8 @@ impl TtsModel for VibeVoiceModel {
                 .expect("validated by resolve_files"),
         )?;
         let tokenizer_spec = VibeVoiceTokenizerSpec::from_tokenizer(&tokenizer)?;
-        let processor = VibeVoiceProcessor::new(tokenizer, tokenizer_spec, preprocessor_config.clone());
+        let processor =
+            VibeVoiceProcessor::new(tokenizer, tokenizer_spec, preprocessor_config.clone());
 
         let vb = ModelFiles::load_safetensors_vb(&files.weights, dtype, &device)?;
         let model_vb = vb.pp("model");
@@ -319,47 +312,60 @@ impl TtsModel for VibeVoiceModel {
         }
 
         let prepared = self.processor.prepare_request(request, &self.device)?;
-        let mut rng = SimpleRng::new(DEFAULT_GENERATION_SEED);
-        let mut token_ids = prepared.input_ids.clone();
-        let mut embedding_overrides = self.prepare_prompt_overrides(&prepared, &mut rng)?;
+        let mut rng = SimpleRng::new(generation_seed());
+        let prompt_overrides = self.prepare_prompt_overrides(&prepared, &mut rng)?;
         let spec = self.processor.tokenizer_spec().clone();
         let valid_token_ids = valid_generated_tokens(&spec);
+        let mut positive_state =
+            self.build_sequence_state(&prepared.input_ids, &prompt_overrides)?;
+        let mut negative_state = self.single_token_state(spec.speech_start_id)?;
+        let diffusion_noise_fixture = load_diffusion_noise_fixture()?;
+        if let Some(fixture) = &diffusion_noise_fixture {
+            if fixture.latent_size != self.config.diffusion_head_config.latent_size {
+                return Err(TtsError::ModelError(format!(
+                    "VibeVoice diffusion noise fixture latent size {} does not match the model latent size {}",
+                    fixture.latent_size,
+                    self.config.diffusion_head_config.latent_size,
+                )));
+            }
+        }
+        let mut diffusion_noise_cursor = diffusion_noise_fixture
+            .as_ref()
+            .map(DiffusionNoiseFixture::cursor);
         let mut current_segment = Vec::new();
         let mut finished_segments = Vec::new();
-        let mut negative_tokens = vec![spec.speech_start_id];
-        let mut negative_embedding_overrides = HashMap::new();
         let mut generated_trace = Vec::new();
         let max_new_tokens = request.max_tokens.unwrap_or_else(|| {
             self.config
                 .decoder_config
                 .max_position_embeddings
-                .saturating_sub(token_ids.len())
+                .saturating_sub(prepared.input_ids.len())
                 .min(2_048)
         });
         let temperature = request.temperature.unwrap_or(0.0) as f32;
         let cfg_scale = request.cfg_scale.unwrap_or(DEFAULT_CFG_SCALE as f64) as f32;
 
         for _step in 0..max_new_tokens {
-            if token_ids.len() >= self.config.decoder_config.max_position_embeddings {
+            if positive_state.len() >= self.config.decoder_config.max_position_embeddings {
                 break;
             }
 
-            let (positive_hidden, logits) = self.forward_for_next_token(&token_ids, &embedding_overrides)?;
+            let (positive_hidden, logits) = self.forward_for_next_token(&positive_state)?;
             let next_token = sample_token(&logits, &valid_token_ids, temperature, &mut rng)?;
-            token_ids.push(next_token);
             generated_trace.push(next_token);
+
+            if next_token == spec.eos_id {
+                break;
+            }
+
+            positive_state.push_token(next_token, self.embed_token(next_token)?)?;
 
             if next_token == spec.speech_start_id {
                 if !current_segment.is_empty() {
                     finished_segments.push(std::mem::take(&mut current_segment));
                 }
-                negative_tokens.clear();
-                negative_tokens.push(spec.speech_start_id);
+                negative_state = self.single_token_state(spec.speech_start_id)?;
                 continue;
-            }
-
-            if next_token == spec.eos_id {
-                break;
             }
 
             if next_token == spec.speech_end_id {
@@ -373,23 +379,19 @@ impl TtsModel for VibeVoiceModel {
                 continue;
             }
 
-            let negative_hidden = self.forward_negative_condition(
-                &negative_tokens,
-                &negative_embedding_overrides,
-            )?;
+            let negative_hidden = self.forward_negative_condition(&negative_state)?;
 
-            let speech_latent = self.sample_speech_token(&positive_hidden, &negative_hidden, cfg_scale, &mut rng)?;
+            let speech_latent = self.sample_speech_token(
+                &positive_hidden,
+                &negative_hidden,
+                cfg_scale,
+                diffusion_noise_cursor.as_mut(),
+                &mut rng,
+            )?;
             current_segment.push(speech_latent.clone());
             let diffusion_embed = self.build_diffusion_override(&current_segment)?;
-            embedding_overrides.insert(token_ids.len() - 1, diffusion_embed);
-            negative_tokens.push(spec.speech_diffusion_id);
-            negative_embedding_overrides.insert(
-                negative_tokens.len() - 1,
-                embedding_overrides
-                    .get(&(token_ids.len() - 1))
-                    .expect("diffusion embedding must exist")
-                    .clone(),
-            );
+            positive_state.replace_last_embedding(diffusion_embed.clone())?;
+            negative_state.push_token(spec.speech_diffusion_id, diffusion_embed)?;
         }
 
         if !current_segment.is_empty() {
@@ -495,14 +497,12 @@ impl VibeVoiceModel {
 
     fn forward_for_next_token(
         &self,
-        token_ids: &[u32],
-        embedding_overrides: &HashMap<usize, Tensor>,
+        sequence: &TokenSequenceState,
     ) -> Result<(Tensor, Tensor), TtsError> {
-        let inputs = self.build_input_embeddings(token_ids, embedding_overrides)?;
-        let mut language_model = self
-            .language_model
-            .lock()
-            .map_err(|_| TtsError::RuntimeError("VibeVoice language model mutex poisoned".to_string()))?;
+        let inputs = sequence.input_embeddings()?;
+        let mut language_model = self.language_model.lock().map_err(|_| {
+            TtsError::RuntimeError("VibeVoice language model mutex poisoned".to_string())
+        })?;
         let hidden = language_model.forward(&inputs)?;
         let last_hidden = hidden.narrow(1, hidden.dim(1)? - 1, 1)?.squeeze(1)?;
         let logits = language_model.next_logits(&last_hidden)?;
@@ -511,40 +511,42 @@ impl VibeVoiceModel {
 
     fn forward_negative_condition(
         &self,
-        negative_tokens: &[u32],
-        negative_embedding_overrides: &HashMap<usize, Tensor>,
+        negative_sequence: &TokenSequenceState,
     ) -> Result<Tensor, TtsError> {
-        let (hidden, _logits) = self.forward_for_next_token(negative_tokens, negative_embedding_overrides)?;
+        let (hidden, _logits) = self.forward_for_next_token(negative_sequence)?;
         Ok(hidden)
     }
 
-    fn build_input_embeddings(
+    fn build_sequence_state(
         &self,
         token_ids: &[u32],
         embedding_overrides: &HashMap<usize, Tensor>,
-    ) -> Result<Tensor, TtsError> {
+    ) -> Result<TokenSequenceState, TtsError> {
         let token_tensor = Tensor::new(token_ids, &self.device)?.unsqueeze(0)?;
-        let language_model = self
-            .language_model
-            .lock()
-            .map_err(|_| TtsError::RuntimeError("VibeVoice language model mutex poisoned".to_string()))?;
+        let language_model = self.language_model.lock().map_err(|_| {
+            TtsError::RuntimeError("VibeVoice language model mutex poisoned".to_string())
+        })?;
         let base = language_model.embed(&token_tensor)?;
         drop(language_model);
 
-        if embedding_overrides.is_empty() {
-            return Ok(base);
-        }
+        TokenSequenceState::from_base_embeddings(token_ids, &base, embedding_overrides)
+    }
 
-        let mut pieces = Vec::with_capacity(token_ids.len());
-        for position in 0..token_ids.len() {
-            if let Some(override_embed) = embedding_overrides.get(&position) {
-                pieces.push(override_embed.unsqueeze(0)?.unsqueeze(0)?);
-            } else {
-                pieces.push(base.narrow(1, position, 1)?);
-            }
-        }
-        let piece_refs = pieces.iter().collect::<Vec<_>>();
-        Tensor::cat(&piece_refs, 1).map_err(Into::into)
+    fn single_token_state(&self, token_id: u32) -> Result<TokenSequenceState, TtsError> {
+        let mut state = TokenSequenceState::empty();
+        state.push_token(token_id, self.embed_token(token_id)?)?;
+        Ok(state)
+    }
+
+    fn embed_token(&self, token_id: u32) -> Result<Tensor, TtsError> {
+        let token_tensor = Tensor::new(&[token_id], &self.device)?.unsqueeze(0)?;
+        let language_model = self.language_model.lock().map_err(|_| {
+            TtsError::RuntimeError("VibeVoice language model mutex poisoned".to_string())
+        })?;
+        language_model
+            .embed(&token_tensor)?
+            .squeeze(0)
+            .map_err(Into::into)
     }
 
     fn sample_speech_token(
@@ -552,34 +554,39 @@ impl VibeVoiceModel {
         positive_condition: &Tensor,
         negative_condition: &Tensor,
         cfg_scale: f32,
+        mut diffusion_noise_cursor: Option<&mut DiffusionNoiseCursor<'_>>,
         rng: &mut SimpleRng,
     ) -> Result<Tensor, TtsError> {
-        let mut scheduler = self
-            .noise_scheduler
-            .lock()
-            .map_err(|_| TtsError::RuntimeError("VibeVoice scheduler mutex poisoned".to_string()))?;
+        let mut scheduler = self.noise_scheduler.lock().map_err(|_| {
+            TtsError::RuntimeError("VibeVoice scheduler mutex poisoned".to_string())
+        })?;
         scheduler.set_timesteps(self.config.diffusion_head_config.ddpm_num_inference_steps);
 
         let condition = Tensor::cat(&[positive_condition, negative_condition], 0)?;
         let latent_size = self.config.diffusion_head_config.latent_size;
-        let mut speech = random_normal_tensor((2, latent_size), self.dtype, &self.device, rng)?;
+        let half = if let Some(cursor) = diffusion_noise_cursor.as_deref_mut() {
+            cursor.next_tensor(&self.device, self.dtype)?
+        } else {
+            random_normal_tensor((1, latent_size), self.dtype, &self.device, rng)?
+        };
+        let mut speech = Tensor::cat(&[&half, &half], 0)?;
+        let cfg_scale_tensor = Tensor::new(cfg_scale, &self.device)?;
 
         for timestep in scheduler.timesteps().to_vec() {
             let half = speech.narrow(0, 0, 1)?;
             let combined = Tensor::cat(&[&half, &half], 0)?;
-            let timestep_tensor = Tensor::from_vec(
-                vec![timestep as f32, timestep as f32],
-                (2,),
-                &self.device,
-            )?
-            .to_dtype(self.dtype)?;
-            let eps = self.prediction_head.forward(&combined, &timestep_tensor, &condition)?;
+            let timestep_tensor =
+                Tensor::from_vec(vec![timestep as f32, timestep as f32], (2,), &self.device)?
+                    .to_dtype(self.dtype)?;
+            let eps = self
+                .prediction_head
+                .forward(&combined, &timestep_tensor, &condition)?;
             let cond_eps = eps.narrow(0, 0, 1)?;
             let uncond_eps = eps.narrow(0, 1, 1)?;
             let guided = uncond_eps.broadcast_add(
                 &cond_eps
                     .broadcast_sub(&uncond_eps)?
-                    .broadcast_mul(&Tensor::new(cfg_scale, &self.device)?)?,
+                    .broadcast_mul(&cfg_scale_tensor)?,
             )?;
             let expanded = Tensor::cat(&[&guided, &guided], 0)?;
             speech = scheduler.step(&expanded, &speech)?;
@@ -605,10 +612,10 @@ impl VibeVoiceModel {
             .acoustic_tokenizer
             .decode(&self.unscale_generated_latents(&segment)?)?;
         let semantic = self.semantic_tokenizer.encode(&decoded_audio)?.mean;
-        let semantic_last = semantic
-            .narrow(1, semantic.dim(1)? - 1, 1)?
-            .squeeze(1)?;
-        let semantic_embed = self.semantic_connector.forward(&semantic_last.unsqueeze(1)?)?;
+        let semantic_last = semantic.narrow(1, semantic.dim(1)? - 1, 1)?.squeeze(1)?;
+        let semantic_embed = self
+            .semantic_connector
+            .forward(&semantic_last.unsqueeze(1)?)?;
         acoustic_embed
             .broadcast_add(&semantic_embed)?
             .squeeze(0)?
@@ -644,16 +651,7 @@ impl VibeVoiceModel {
 
     fn diffusion_token_embedding(&self) -> Result<Tensor, TtsError> {
         let token_id = self.processor.tokenizer_spec().speech_diffusion_id;
-        let token_tensor = Tensor::new(&[token_id], &self.device)?.unsqueeze(0)?;
-        let language_model = self
-            .language_model
-            .lock()
-            .map_err(|_| TtsError::RuntimeError("VibeVoice language model mutex poisoned".to_string()))?;
-        language_model
-            .embed(&token_tensor)?
-            .squeeze(0)?
-            .squeeze(0)
-            .map_err(Into::into)
+        self.embed_token(token_id)?.squeeze(0).map_err(Into::into)
     }
 }
 
@@ -731,7 +729,9 @@ fn sample_token(
                     .partial_cmp(&logits[*right as usize])
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .ok_or_else(|| TtsError::ModelError("No valid VibeVoice tokens available".to_string()));
+            .ok_or_else(|| {
+                TtsError::ModelError("No valid VibeVoice tokens available".to_string())
+            });
     }
 
     let mut max_logit = f32::NEG_INFINITY;
@@ -763,54 +763,28 @@ fn sample_token(
 }
 
 fn scalar_from_tensor(tensor: &Tensor) -> Result<f32, TtsError> {
-    let values = tensor.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let values = tensor
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     values
         .first()
         .copied()
         .ok_or_else(|| TtsError::ModelError("Expected scalar tensor".to_string()))
 }
 
-fn random_normal_tensor<S: Into<candle_core::Shape>>(
-    shape: S,
-    dtype: DType,
-    device: &Device,
-    rng: &mut SimpleRng,
-) -> Result<Tensor, TtsError> {
-    let shape = shape.into();
-    let elem_count = shape.elem_count();
-    let mut values = Vec::with_capacity(elem_count);
-    while values.len() < elem_count {
-        let u1 = rng.next_f32().clamp(f32::MIN_POSITIVE, 1.0 - f32::EPSILON);
-        let u2 = rng.next_f32();
-        let radius = (-2.0 * u1.ln()).sqrt();
-        let theta = 2.0 * std::f32::consts::PI * u2;
-        values.push(radius * theta.cos());
-        if values.len() < elem_count {
-            values.push(radius * theta.sin());
-        }
-    }
-    Tensor::from_vec(values, shape, device)
-        .and_then(|tensor| tensor.to_dtype(dtype))
-        .map_err(Into::into)
+fn generation_seed() -> u64 {
+    std::env::var(VIBEVOICE_SEED_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_GENERATION_SEED)
 }
 
-struct SimpleRng {
-    state: u64,
-}
-
-impl SimpleRng {
-    fn new(seed: u64) -> Self {
-        Self { state: seed }
-    }
-
-    fn next_u32(&mut self) -> u32 {
-        self.state ^= self.state << 13;
-        self.state ^= self.state >> 7;
-        self.state ^= self.state << 17;
-        self.state as u32
-    }
-
-    fn next_f32(&mut self) -> f32 {
-        self.next_u32() as f32 / u32::MAX as f32
-    }
+fn load_diffusion_noise_fixture() -> Result<Option<DiffusionNoiseFixture>, TtsError> {
+    let Some(path) = std::env::var_os(VIBEVOICE_NOISE_PATH_ENV) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(path);
+    let fixture = DiffusionNoiseFixture::from_file(&path)?;
+    Ok(Some(fixture))
 }

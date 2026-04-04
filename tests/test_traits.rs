@@ -1,7 +1,7 @@
 //! Tests for the core TtsModel trait and API types.
 
-use std::path::PathBuf;
 use any_tts::{AudioSamples, ModelFiles, ModelType, SynthesisRequest, TtsConfig};
+use std::path::PathBuf;
 
 #[test]
 fn test_synthesis_request_builder() {

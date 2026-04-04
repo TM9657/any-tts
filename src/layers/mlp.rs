@@ -26,15 +26,10 @@ impl SiluMlp {
     /// - `gate_proj.weight` — (intermediate_size, hidden_size)
     /// - `up_proj.weight`   — (intermediate_size, hidden_size)
     /// - `down_proj.weight` — (hidden_size, intermediate_size)
-    pub fn load(
-        hidden_size: usize,
-        intermediate_size: usize,
-        vb: VarBuilder,
-    ) -> Result<Self> {
+    pub fn load(hidden_size: usize, intermediate_size: usize, vb: VarBuilder) -> Result<Self> {
         let gate_proj =
             candle_nn::linear_no_bias(hidden_size, intermediate_size, vb.pp("gate_proj"))?;
-        let up_proj =
-            candle_nn::linear_no_bias(hidden_size, intermediate_size, vb.pp("up_proj"))?;
+        let up_proj = candle_nn::linear_no_bias(hidden_size, intermediate_size, vb.pp("up_proj"))?;
         let down_proj =
             candle_nn::linear_no_bias(intermediate_size, hidden_size, vb.pp("down_proj"))?;
 

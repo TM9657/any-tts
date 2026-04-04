@@ -79,18 +79,18 @@ impl AudioSamples {
                             "WAV fmt chunk is too small".to_string(),
                         ));
                     }
-                    let audio_format = u16::from_le_bytes([bytes[chunk_start], bytes[chunk_start + 1]]);
-                    let channels = u16::from_le_bytes([bytes[chunk_start + 2], bytes[chunk_start + 3]]);
+                    let audio_format =
+                        u16::from_le_bytes([bytes[chunk_start], bytes[chunk_start + 1]]);
+                    let channels =
+                        u16::from_le_bytes([bytes[chunk_start + 2], bytes[chunk_start + 3]]);
                     let sample_rate = u32::from_le_bytes([
                         bytes[chunk_start + 4],
                         bytes[chunk_start + 5],
                         bytes[chunk_start + 6],
                         bytes[chunk_start + 7],
                     ]);
-                    let bits_per_sample = u16::from_le_bytes([
-                        bytes[chunk_start + 14],
-                        bytes[chunk_start + 15],
-                    ]);
+                    let bits_per_sample =
+                        u16::from_le_bytes([bytes[chunk_start + 14], bytes[chunk_start + 15]]);
                     format = Some((audio_format, channels, sample_rate, bits_per_sample));
                 }
                 b"data" => {
@@ -105,12 +105,10 @@ impl AudioSamples {
             }
         }
 
-        let (audio_format, channels, sample_rate, bits_per_sample) = format.ok_or_else(|| {
-            crate::TtsError::AudioError("Missing WAV fmt chunk".to_string())
-        })?;
-        let data = data.ok_or_else(|| {
-            crate::TtsError::AudioError("Missing WAV data chunk".to_string())
-        })?;
+        let (audio_format, channels, sample_rate, bits_per_sample) = format
+            .ok_or_else(|| crate::TtsError::AudioError("Missing WAV fmt chunk".to_string()))?;
+        let data =
+            data.ok_or_else(|| crate::TtsError::AudioError("Missing WAV data chunk".to_string()))?;
 
         if channels == 0 {
             return Err(crate::TtsError::AudioError(
@@ -130,9 +128,8 @@ impl AudioSamples {
             (1, 24) => data
                 .chunks_exact(3)
                 .map(|chunk| {
-                    let value = ((chunk[2] as i32) << 24 >> 8)
-                        | ((chunk[1] as i32) << 8)
-                        | chunk[0] as i32;
+                    let value =
+                        ((chunk[2] as i32) << 24 >> 8) | ((chunk[1] as i32) << 8) | chunk[0] as i32;
                     value as f32 / 8_388_607.0
                 })
                 .collect(),

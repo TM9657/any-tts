@@ -180,8 +180,14 @@ impl GroupedQueryAttention {
         };
 
         // Apply RoPE
-        let cos_slice = cos.narrow(0, start_pos, seq_len)?.unsqueeze(0)?.unsqueeze(0)?;
-        let sin_slice = sin.narrow(0, start_pos, seq_len)?.unsqueeze(0)?.unsqueeze(0)?;
+        let cos_slice = cos
+            .narrow(0, start_pos, seq_len)?
+            .unsqueeze(0)?
+            .unsqueeze(0)?;
+        let sin_slice = sin
+            .narrow(0, start_pos, seq_len)?
+            .unsqueeze(0)?
+            .unsqueeze(0)?;
         let (q, k) = apply_rotary_emb(&q, &k, &cos_slice, &sin_slice)?;
 
         // Update KV-cache
@@ -218,7 +224,7 @@ impl GroupedQueryAttention {
         // BF16 matmul is not supported on CPU/Metal, but F16 works fine.
         // For BF16 weights, the model loader should convert to F16 automatically.
         let scale = (self.head_dim as f64).sqrt();
-        
+
         let attn_weights = (q.matmul(&k.transpose(2, 3)?)? / scale)?;
 
         let attn_weights = if let Some(mask) = mask {
@@ -231,9 +237,11 @@ impl GroupedQueryAttention {
         let attn_output = attn_weights.matmul(&v)?;
 
         // Reshape back: (batch, num_heads, seq_len, head_dim) → (batch, seq_len, hidden)
-        let attn_output = attn_output
-            .transpose(1, 2)?
-            .reshape((batch, seq_len, self.num_heads * self.head_dim))?;
+        let attn_output = attn_output.transpose(1, 2)?.reshape((
+            batch,
+            seq_len,
+            self.num_heads * self.head_dim,
+        ))?;
 
         // Output projection
         self.o_proj.forward(&attn_output)

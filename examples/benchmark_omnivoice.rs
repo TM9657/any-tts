@@ -3,14 +3,16 @@
 //! Example:
 //!   cargo run --example benchmark_omnivoice --release --no-default-features --features omnivoice,download,metal -- --warmup 1 --iterations 3
 
+use any_tts::models::omnivoice::{
+    preferred_runtime_choice, preferred_runtime_choices, OmniVoiceRuntimeChoice,
+};
+use any_tts::{load_model, ModelType, SynthesisRequest, TtsConfig};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use any_tts::models::omnivoice::{preferred_runtime_choice, preferred_runtime_choices, OmniVoiceRuntimeChoice};
-use any_tts::{load_model, ModelType, SynthesisRequest, TtsConfig};
 
 #[derive(Debug, Deserialize)]
 struct OmniVoiceExampleConfig {
@@ -74,7 +76,11 @@ fn main() {
 
     let best_result = results
         .iter()
-        .filter_map(|result| result.median_ms.map(|median| (median, result.backend.clone(), result.dtype.clone())))
+        .filter_map(|result| {
+            result
+                .median_ms
+                .map(|median| (median, result.backend.clone(), result.dtype.clone()))
+        })
         .min_by(|left, right| left.0.total_cmp(&right.0));
 
     let best_runtime = best_result

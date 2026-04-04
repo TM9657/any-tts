@@ -28,11 +28,7 @@ impl TransformerBlock {
     /// - `self_attn.{q,k,v,o}_proj.weight`
     /// - `post_attention_layernorm.weight`
     /// - `mlp.{gate,up,down}_proj.weight`
-    pub fn load(
-        config: &GqaConfig,
-        intermediate_size: usize,
-        vb: VarBuilder,
-    ) -> Result<Self> {
+    pub fn load(config: &GqaConfig, intermediate_size: usize, vb: VarBuilder) -> Result<Self> {
         let input_layernorm = RmsNorm::load(
             config.hidden_size,
             config.rms_norm_eps,

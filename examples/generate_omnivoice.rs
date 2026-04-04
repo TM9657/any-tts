@@ -7,11 +7,11 @@
 //! backends; this example will pick the best compiled and available backend
 //! with CPU fallback.
 
+use any_tts::models::omnivoice::preferred_runtime_choice;
+use any_tts::{load_model, ModelType, SynthesisRequest, TtsConfig};
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use any_tts::models::omnivoice::preferred_runtime_choice;
-use any_tts::{load_model, ModelType, SynthesisRequest, TtsConfig};
 
 #[derive(Debug, Deserialize)]
 struct OmniVoiceExampleConfig {
@@ -50,7 +50,10 @@ fn main() {
         .expect("OmniVoice synthesis failed");
 
     let output_path = PathBuf::from(&example.output);
-    if let Some(parent) = output_path.parent().filter(|path| !path.as_os_str().is_empty()) {
+    if let Some(parent) = output_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent)
             .unwrap_or_else(|err| panic!("Failed to create {}: {err}", parent.display()));
     }

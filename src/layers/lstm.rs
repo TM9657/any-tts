@@ -65,14 +65,8 @@ impl Lstm {
                 (4 * hidden_size, hidden_size),
                 &format!("weight_hh_l{}", layer_idx),
             )?;
-            let bias_ih = vb.get(
-                4 * hidden_size,
-                &format!("bias_ih_l{}", layer_idx),
-            )?;
-            let bias_hh = vb.get(
-                4 * hidden_size,
-                &format!("bias_hh_l{}", layer_idx),
-            )?;
+            let bias_ih = vb.get(4 * hidden_size, &format!("bias_ih_l{}", layer_idx))?;
+            let bias_hh = vb.get(4 * hidden_size, &format!("bias_hh_l{}", layer_idx))?;
 
             let (weight_ih_rev, weight_hh_rev, bias_ih_rev, bias_hh_rev) = if bidirectional {
                 let w_ih = vb.get(
@@ -83,14 +77,8 @@ impl Lstm {
                     (4 * hidden_size, hidden_size),
                     &format!("weight_hh_l{}_reverse", layer_idx),
                 )?;
-                let b_ih = vb.get(
-                    4 * hidden_size,
-                    &format!("bias_ih_l{}_reverse", layer_idx),
-                )?;
-                let b_hh = vb.get(
-                    4 * hidden_size,
-                    &format!("bias_hh_l{}_reverse", layer_idx),
-                )?;
+                let b_ih = vb.get(4 * hidden_size, &format!("bias_ih_l{}_reverse", layer_idx))?;
+                let b_hh = vb.get(4 * hidden_size, &format!("bias_hh_l{}_reverse", layer_idx))?;
                 (Some(w_ih), Some(w_hh), Some(b_ih), Some(b_hh))
             } else {
                 (None, None, None, None)
@@ -195,10 +183,7 @@ impl LstmLayer {
             let gates = x_t
                 .matmul(&w_ih_t)?
                 .broadcast_add(bias_ih)?
-                .add(
-                    &h.matmul(&w_hh_t)?
-                        .broadcast_add(bias_hh)?,
-                )?;
+                .add(&h.matmul(&w_hh_t)?.broadcast_add(bias_hh)?)?;
 
             // Split into 4 gates: input, forget, cell, output
             let gate_size = self.hidden_size;

@@ -21,11 +21,8 @@ impl VibeVoiceDiffusionHead {
             config.hidden_size,
             vb.pp("noisy_images_proj"),
         )?;
-        let cond_proj = candle_nn::linear_no_bias(
-            config.hidden_size,
-            config.hidden_size,
-            vb.pp("cond_proj"),
-        )?;
+        let cond_proj =
+            candle_nn::linear_no_bias(config.hidden_size, config.hidden_size, vb.pp("cond_proj"))?;
         let t_embedder = TimestepEmbedder::load(config.hidden_size, vb.pp("t_embedder"))?;
 
         let mut layers = Vec::with_capacity(config.head_layers);
@@ -54,7 +51,12 @@ impl VibeVoiceDiffusionHead {
         })
     }
 
-    pub fn forward(&self, noisy_images: &Tensor, timesteps: &Tensor, condition: &Tensor) -> Result<Tensor> {
+    pub fn forward(
+        &self,
+        noisy_images: &Tensor,
+        timesteps: &Tensor,
+        condition: &Tensor,
+    ) -> Result<Tensor> {
         let mut x = self.noisy_images_proj.forward(noisy_images)?;
         let t = self.t_embedder.forward(timesteps)?;
         let condition = self.cond_proj.forward(condition)?;
@@ -100,14 +102,16 @@ struct DiffusionHeadLayer {
 }
 
 impl DiffusionHeadLayer {
-    fn load(hidden_size: usize, intermediate_size: usize, eps: f64, vb: VarBuilder) -> Result<Self> {
+    fn load(
+        hidden_size: usize,
+        intermediate_size: usize,
+        eps: f64,
+        vb: VarBuilder,
+    ) -> Result<Self> {
         let ffn = SiluMlp::load(hidden_size, intermediate_size, vb.pp("ffn"))?;
         let norm = RmsNorm::load(hidden_size, eps, vb.pp("norm"))?;
-        let ada_ln_modulation = candle_nn::linear_no_bias(
-            hidden_size,
-            hidden_size * 3,
-            vb.pp("adaLN_modulation.1"),
-        )?;
+        let ada_ln_modulation =
+            candle_nn::linear_no_bias(hidden_size, hidden_size * 3, vb.pp("adaLN_modulation.1"))?;
         Ok(Self {
             ffn,
             norm,
@@ -116,7 +120,9 @@ impl DiffusionHeadLayer {
     }
 
     fn forward(&self, x: &Tensor, condition: &Tensor) -> Result<Tensor> {
-        let modulation = self.ada_ln_modulation.forward(&candle_nn::Activation::Silu.forward(condition)?)?;
+        let modulation = self
+            .ada_ln_modulation
+            .forward(&candle_nn::Activation::Silu.forward(condition)?)?;
         let hidden = x.dim(candle_core::D::Minus1)?;
         let shift = modulation.narrow(candle_core::D::Minus1, 0, hidden)?;
         let scale = modulation.narrow(candle_core::D::Minus1, hidden, hidden)?;
@@ -136,11 +142,8 @@ struct DiffusionFinalLayer {
 impl DiffusionFinalLayer {
     fn load(hidden_size: usize, output_size: usize, eps: f64, vb: VarBuilder) -> Result<Self> {
         let linear = candle_nn::linear_no_bias(hidden_size, output_size, vb.pp("linear"))?;
-        let ada_ln_modulation = candle_nn::linear_no_bias(
-            hidden_size,
-            hidden_size * 2,
-            vb.pp("adaLN_modulation.1"),
-        )?;
+        let ada_ln_modulation =
+            candle_nn::linear_no_bias(hidden_size, hidden_size * 2, vb.pp("adaLN_modulation.1"))?;
         Ok(Self {
             linear,
             ada_ln_modulation,
@@ -149,7 +152,9 @@ impl DiffusionFinalLayer {
     }
 
     fn forward(&self, x: &Tensor, condition: &Tensor) -> Result<Tensor> {
-        let modulation = self.ada_ln_modulation.forward(&candle_nn::Activation::Silu.forward(condition)?)?;
+        let modulation = self
+            .ada_ln_modulation
+            .forward(&candle_nn::Activation::Silu.forward(condition)?)?;
         let hidden = x.dim(candle_core::D::Minus1)?;
         let shift = modulation.narrow(candle_core::D::Minus1, 0, hidden)?;
         let scale = modulation.narrow(candle_core::D::Minus1, hidden, hidden)?;
@@ -230,11 +235,12 @@ impl DpmSolverMultistepScheduler {
         self.model_outputs.push(Some(converted.clone()));
 
         let lower_order_final = self.step_index == self.timesteps.len().saturating_sub(1);
-        let prev_sample = if self.solver_order == 1 || self.lower_order_nums < 1 || lower_order_final {
-            self.first_order_update(&converted, sample)?
-        } else {
-            self.second_order_update(sample)?
-        };
+        let prev_sample =
+            if self.solver_order == 1 || self.lower_order_nums < 1 || lower_order_final {
+                self.first_order_update(&converted, sample)?
+            } else {
+                self.second_order_update(sample)?
+            };
 
         if self.lower_order_nums < self.solver_order {
             self.lower_order_nums += 1;
@@ -247,10 +253,18 @@ impl DpmSolverMultistepScheduler {
         let sigma = self.sigmas[self.step_index];
         let (alpha_t, sigma_t) = sigma_to_alpha_sigma_t(sigma);
         match self.prediction_type.as_str() {
-            "v_prediction" => sample.broadcast_mul(&Tensor::new(alpha_t as f32, sample.device())?)?
-                .broadcast_sub(&model_output.broadcast_mul(&Tensor::new(sigma_t as f32, model_output.device())?)?),
+            "v_prediction" => sample
+                .broadcast_mul(&Tensor::new(alpha_t as f32, sample.device())?)?
+                .broadcast_sub(
+                    &model_output
+                        .broadcast_mul(&Tensor::new(sigma_t as f32, model_output.device())?)?,
+                ),
             "sample" => Ok(model_output.clone()),
-            _ => sample.broadcast_sub(&model_output.broadcast_mul(&Tensor::new(sigma_t as f32, model_output.device())?)?)?
+            _ => sample
+                .broadcast_sub(
+                    &model_output
+                        .broadcast_mul(&Tensor::new(sigma_t as f32, model_output.device())?)?,
+                )?
                 .broadcast_div(&Tensor::new(alpha_t as f32, sample.device())?),
         }
     }
@@ -266,8 +280,11 @@ impl DpmSolverMultistepScheduler {
 
         let sample_scale = (sigma_t_hat / sigma_s_hat) as f32;
         let model_scale = (alpha_t * ((-h).exp() - 1.0)) as f32;
-        sample.broadcast_mul(&Tensor::new(sample_scale, sample.device())?)?
-            .broadcast_sub(&model_output.broadcast_mul(&Tensor::new(model_scale, model_output.device())?)?)
+        sample
+            .broadcast_mul(&Tensor::new(sample_scale, sample.device())?)?
+            .broadcast_sub(
+                &model_output.broadcast_mul(&Tensor::new(model_scale, model_output.device())?)?,
+            )
     }
 
     fn second_order_update(&self, sample: &Tensor) -> Result<Tensor> {
@@ -291,10 +308,13 @@ impl DpmSolverMultistepScheduler {
         let h = lambda_t - lambda_s0;
         let h0 = lambda_s0 - lambda_s1;
         let r0 = h0 / h;
-        let d1 = (m0.broadcast_sub(m1)?)
-            .broadcast_mul(&Tensor::new((1.0 / r0) as f32, m0.device())?)?;
+        let d1 =
+            (m0.broadcast_sub(m1)?).broadcast_mul(&Tensor::new((1.0 / r0) as f32, m0.device())?)?;
 
-        let sample_term = sample.broadcast_mul(&Tensor::new((sigma_t_hat / sigma_s0_hat) as f32, sample.device())?)?;
+        let sample_term = sample.broadcast_mul(&Tensor::new(
+            (sigma_t_hat / sigma_s0_hat) as f32,
+            sample.device(),
+        )?)?;
         let coeff = alpha_t * ((-h).exp() - 1.0);
         let d0_term = m0.broadcast_mul(&Tensor::new(coeff as f32, m0.device())?)?;
         let d1_term = d1.broadcast_mul(&Tensor::new((0.5 * coeff) as f32, d1.device())?)?;
@@ -319,7 +339,10 @@ fn rms_norm_without_weight(x: &Tensor, eps: f64) -> Result<Tensor> {
 
 fn timestep_embedding(timesteps: &Tensor, dim: usize) -> Result<Tensor> {
     let device = timesteps.device().clone();
-    let timesteps = timesteps.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let timesteps = timesteps
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     let half = dim / 2;
     let mut data = Vec::with_capacity(timesteps.len() * dim);
     let freqs = (0..half)
@@ -347,8 +370,12 @@ fn betas_for_alpha_bar(num_diffusion_timesteps: usize) -> Vec<f64> {
     for index in 0..num_diffusion_timesteps {
         let t1 = index as f64 / num_diffusion_timesteps as f64;
         let t2 = (index + 1) as f64 / num_diffusion_timesteps as f64;
-        let alpha_bar_1 = ((t1 + 0.008) / 1.008 * std::f64::consts::PI / 2.0).cos().powi(2);
-        let alpha_bar_2 = ((t2 + 0.008) / 1.008 * std::f64::consts::PI / 2.0).cos().powi(2);
+        let alpha_bar_1 = ((t1 + 0.008) / 1.008 * std::f64::consts::PI / 2.0)
+            .cos()
+            .powi(2);
+        let alpha_bar_2 = ((t2 + 0.008) / 1.008 * std::f64::consts::PI / 2.0)
+            .cos()
+            .powi(2);
         betas.push((1.0 - alpha_bar_2 / alpha_bar_1).min(0.999));
     }
     betas

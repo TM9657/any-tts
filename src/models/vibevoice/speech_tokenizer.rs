@@ -1,8 +1,8 @@
 use candle_core::{DType, Result, Tensor};
 use candle_nn::{Linear, Module, VarBuilder};
 
-use crate::layers::conv::{Conv1d, ConvTranspose1d};
 use super::config::VibeVoiceTokenizerConfig;
+use crate::layers::conv::{Conv1d, ConvTranspose1d};
 
 struct ConvRmsNorm {
     weight: Option<Tensor>,
@@ -76,7 +76,8 @@ impl SConv1d {
 
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let padding_total = (self.kernel_size - 1) * self.dilation - (self.stride - 1);
-        let extra_padding = extra_padding_for_conv1d(x.dim(2)?, self.kernel_size, self.stride, padding_total);
+        let extra_padding =
+            extra_padding_for_conv1d(x.dim(2)?, self.kernel_size, self.stride, padding_total);
         let (padding_left, padding_right) = if self.causal {
             (padding_total, extra_padding)
         } else {
@@ -556,11 +557,19 @@ fn pad1d_constant(x: &Tensor, left: usize, right: usize) -> Result<Tensor> {
     let (batch, channels, _) = x.dims3()?;
     let mut parts = Vec::new();
     if left > 0 {
-        parts.push(Tensor::zeros((batch, channels, left), x.dtype(), x.device())?);
+        parts.push(Tensor::zeros(
+            (batch, channels, left),
+            x.dtype(),
+            x.device(),
+        )?);
     }
     parts.push(x.clone());
     if right > 0 {
-        parts.push(Tensor::zeros((batch, channels, right), x.dtype(), x.device())?);
+        parts.push(Tensor::zeros(
+            (batch, channels, right),
+            x.dtype(),
+            x.device(),
+        )?);
     }
     let parts_ref = parts.iter().collect::<Vec<_>>();
     Tensor::cat(&parts_ref, 2)

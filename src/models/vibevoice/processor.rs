@@ -23,9 +23,9 @@ pub struct VibeVoiceTokenizerSpec {
 
 impl VibeVoiceTokenizerSpec {
     pub fn from_tokenizer(tokenizer: &TextTokenizer) -> Result<Self, TtsError> {
-        let speech_start_id = tokenizer
-            .token_to_id("<|vision_start|>")
-            .ok_or_else(|| TtsError::TokenizerError("Missing <|vision_start|> token".to_string()))?;
+        let speech_start_id = tokenizer.token_to_id("<|vision_start|>").ok_or_else(|| {
+            TtsError::TokenizerError("Missing <|vision_start|> token".to_string())
+        })?;
         let speech_end_id = tokenizer
             .token_to_id("<|vision_end|>")
             .ok_or_else(|| TtsError::TokenizerError("Missing <|vision_end|> token".to_string()))?;
@@ -35,9 +35,7 @@ impl VibeVoiceTokenizerSpec {
         let eos_id = tokenizer
             .token_to_id("<|endoftext|>")
             .ok_or_else(|| TtsError::TokenizerError("Missing <|endoftext|> token".to_string()))?;
-        let pad_id = tokenizer
-            .token_to_id("<|image_pad|>")
-            .unwrap_or(eos_id);
+        let pad_id = tokenizer.token_to_id("<|image_pad|>").unwrap_or(eos_id);
         let bos_id = tokenizer.token_to_id("<|begin_of_text|>");
 
         Ok(Self {
@@ -125,7 +123,8 @@ impl VibeVoiceProcessor {
         let mut speech_inputs = Vec::new();
 
         if let Some(reference_audio) = &request.reference_audio {
-            let (voice_tokens, voice_masks, voice_audio) = self.create_voice_prompt(reference_audio)?;
+            let (voice_tokens, voice_masks, voice_audio) =
+                self.create_voice_prompt(reference_audio)?;
             input_ids.extend(voice_tokens);
             speech_input_mask.extend(voice_masks);
             speech_inputs.push(voice_audio);
@@ -171,7 +170,9 @@ impl VibeVoiceProcessor {
         let mut masks = vec![false; tokens.len()];
         let prefix_tokens = self.tokenizer.encode(" Speaker 0:")?;
         let normalized_audio = self.normalize_reference_audio(reference_audio);
-        let vae_len = normalized_audio.len().div_ceil(self.config.speech_tok_compress_ratio);
+        let vae_len = normalized_audio
+            .len()
+            .div_ceil(self.config.speech_tok_compress_ratio);
 
         let mut speaker_tokens = prefix_tokens.clone();
         speaker_tokens.push(self.tokenizer_spec.speech_start_id);
@@ -197,14 +198,14 @@ impl VibeVoiceProcessor {
         speech_inputs: &[Vec<f32>],
         device: &Device,
     ) -> Result<PreparedSpeechInputs, TtsError> {
-        let max_samples = speech_inputs
-            .iter()
-            .map(Vec::len)
-            .max()
-            .unwrap_or(0);
+        let max_samples = speech_inputs.iter().map(Vec::len).max().unwrap_or(0);
         let max_tokens = speech_inputs
             .iter()
-            .map(|samples| samples.len().div_ceil(self.config.speech_tok_compress_ratio))
+            .map(|samples| {
+                samples
+                    .len()
+                    .div_ceil(self.config.speech_tok_compress_ratio)
+            })
             .max()
             .unwrap_or(0);
 
@@ -215,7 +216,9 @@ impl VibeVoiceProcessor {
             let start = row * max_samples;
             padded[start..start + samples.len()].copy_from_slice(samples);
 
-            let token_len = samples.len().div_ceil(self.config.speech_tok_compress_ratio);
+            let token_len = samples
+                .len()
+                .div_ceil(self.config.speech_tok_compress_ratio);
             let mask_start = row * max_tokens;
             for value in &mut masks[mask_start..mask_start + token_len] {
                 *value = 1;
@@ -305,9 +308,13 @@ fn normalize_dbfs(samples: &[f32], target_db_fs: f32, eps: f32) -> Vec<f32> {
         return Vec::new();
     }
 
-    let rms = (samples.iter().map(|value| value * value).sum::<f32>() / samples.len() as f32).sqrt();
+    let rms =
+        (samples.iter().map(|value| value * value).sum::<f32>() / samples.len() as f32).sqrt();
     let scalar = 10f32.powf(target_db_fs / 20.0) / (rms + eps);
-    let mut normalized = samples.iter().map(|value| value * scalar).collect::<Vec<_>>();
+    let mut normalized = samples
+        .iter()
+        .map(|value| value * scalar)
+        .collect::<Vec<_>>();
 
     let peak = normalized
         .iter()

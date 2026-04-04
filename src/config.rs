@@ -1120,7 +1120,10 @@ impl TtsConfig {
     pub fn default_runtime_command(&self) -> Option<&str> {
         match self.model_type {
             ModelType::Voxtral => Some("python3"),
-            ModelType::Kokoro | ModelType::OmniVoice | ModelType::Qwen3Tts | ModelType::VibeVoice => None,
+            ModelType::Kokoro
+            | ModelType::OmniVoice
+            | ModelType::Qwen3Tts
+            | ModelType::VibeVoice => None,
         }
     }
 
@@ -1134,7 +1137,11 @@ impl TtsConfig {
     /// Get the default runtime endpoint for the configured model, if any.
     pub fn default_runtime_endpoint(&self) -> Option<&str> {
         match self.model_type {
-            ModelType::Kokoro | ModelType::OmniVoice | ModelType::Qwen3Tts | ModelType::VibeVoice | ModelType::Voxtral => None,
+            ModelType::Kokoro
+            | ModelType::OmniVoice
+            | ModelType::Qwen3Tts
+            | ModelType::VibeVoice
+            | ModelType::Voxtral => None,
         }
     }
 
