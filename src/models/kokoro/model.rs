@@ -92,10 +92,14 @@ impl TtsModel for KokoroModel {
         let device = config.device.resolve()?;
         let mut dtype = config.dtype.to_candle();
 
-        // BF16 matmul is not supported on CPU — fall back to F32
-        if dtype == DType::BF16 && device.is_cpu() {
-            info!("BF16 not supported on CPU, falling back to F32");
-            dtype = DType::F32;
+        if dtype == DType::BF16 {
+            if device.is_cpu() {
+                info!("BF16 not supported on CPU, falling back to F32");
+                dtype = DType::F32;
+            } else if matches!(device, Device::Metal(_)) {
+                info!("BF16 is not supported on Metal for Kokoro; falling back to F32");
+                dtype = DType::F32;
+            }
         }
 
         // Parse model config
@@ -642,7 +646,9 @@ impl KokoroModel {
         // [1, seq_len]
 
         // Apply speed
-        let duration = duration.affine(1.0 / speed, 0.0)?;
+        let duration = duration.broadcast_mul(
+            &Tensor::new((1.0 / speed) as f32, duration.device())?.to_dtype(duration.dtype())?,
+        )?;
 
         // Round and clamp durations
         let pred_dur = Self::round_and_clamp_durations(&duration)?;

@@ -25,15 +25,23 @@ use crate::error::{TtsError, TtsResult};
 use crate::mel::{MelConfig, MelSpectrogram};
 use crate::traits::ReferenceAudio;
 
+fn scalar_like(tensor: &Tensor, value: f32) -> candle_core::Result<Tensor> {
+    Tensor::new(value, tensor.device())?.to_dtype(tensor.dtype())
+}
+
+fn scale_tensor(tensor: &Tensor, value: f32) -> candle_core::Result<Tensor> {
+    tensor.broadcast_mul(&scalar_like(tensor, value)?)
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /// Leaky ReLU with configurable negative slope.
-fn leaky_relu(x: &Tensor, negative_slope: f64) -> candle_core::Result<Tensor> {
+fn leaky_relu(x: &Tensor, negative_slope: f32) -> candle_core::Result<Tensor> {
     // leaky_relu(x) = relu(x) + α · (x − relu(x))
     let relu_x = x.relu()?;
-    let neg_part = (x - &relu_x)?.affine(negative_slope, 0.0)?;
+    let neg_part = (x - &relu_x)?.broadcast_mul(&scalar_like(x, negative_slope)?)?;
     &relu_x + &neg_part
 }
 
@@ -168,9 +176,8 @@ impl ResBlk2d {
         let h = self.conv2.forward(&h)?;
 
         // Combine
-        let sqrt2 = std::f64::consts::SQRT_2;
         let sum: Tensor = (shortcut + h)?;
-        sum.affine(1.0 / sqrt2, 0.0)
+        scale_tensor(&sum, std::f32::consts::FRAC_1_SQRT_2)
     }
 }
 

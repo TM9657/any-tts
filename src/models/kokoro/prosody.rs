@@ -13,6 +13,14 @@ use candle_nn::VarBuilder;
 use crate::layers::conv::{AdaIn1d, AdaLayerNorm, Conv1d, ConvTranspose1d, LinearNorm};
 use crate::layers::lstm::Lstm;
 
+fn scalar_like(tensor: &Tensor, value: f32) -> Result<Tensor> {
+    Tensor::new(value, tensor.device())?.to_dtype(tensor.dtype())
+}
+
+fn scale_tensor(tensor: &Tensor, value: f32) -> Result<Tensor> {
+    tensor.broadcast_mul(&scalar_like(tensor, value)?)
+}
+
 // ---------------------------------------------------------------------------
 // Upsample helper (for Metal compatibility)
 // ---------------------------------------------------------------------------
@@ -41,8 +49,8 @@ fn upsample_1d_repeat(x: &Tensor, target_len: usize) -> Result<Tensor> {
 }
 
 /// LeakyReLU activation: max(x, x * negative_slope)
-fn leaky_relu(x: &Tensor, negative_slope: f64) -> Result<Tensor> {
-    let scaled = (x * negative_slope)?;
+fn leaky_relu(x: &Tensor, negative_slope: f32) -> Result<Tensor> {
+    let scaled = scale_tensor(x, negative_slope)?;
     x.maximum(&scaled)
 }
 
@@ -152,7 +160,7 @@ impl AdainResBlk1d {
         let residual = self.shortcut(x)?;
         let out = self.residual(x, s)?;
         let combined = out.add(&residual)?;
-        combined.affine(std::f64::consts::FRAC_1_SQRT_2, 0.0)
+        scale_tensor(&combined, std::f32::consts::FRAC_1_SQRT_2)
     }
 
     /// Whether this block upsamples.

@@ -15,6 +15,14 @@ use crate::layers::conv::{AdaIn1d, Conv1d, ConvTranspose1d};
 
 use super::prosody::AdainResBlk1d;
 
+fn scalar_like(tensor: &Tensor, value: f32) -> Result<Tensor> {
+    Tensor::new(value, tensor.device())?.to_dtype(tensor.dtype())
+}
+
+fn scale_tensor(tensor: &Tensor, value: f32) -> Result<Tensor> {
+    tensor.broadcast_mul(&scalar_like(tensor, value)?)
+}
+
 // ---------------------------------------------------------------------------
 // Upsample helper (for Metal compatibility)
 // ---------------------------------------------------------------------------
@@ -43,8 +51,8 @@ fn upsample_1d_repeat(x: &Tensor, target_len: usize) -> Result<Tensor> {
 }
 
 /// LeakyReLU activation: max(x, x * negative_slope)
-fn leaky_relu(x: &Tensor, negative_slope: f64) -> Result<Tensor> {
-    let scaled = (x * negative_slope)?;
+fn leaky_relu(x: &Tensor, negative_slope: f32) -> Result<Tensor> {
+    let scaled = scale_tensor(x, negative_slope)?;
     x.maximum(&scaled)
 }
 
@@ -348,15 +356,15 @@ impl SineGen {
         let f0_data: Vec<Vec<Vec<f32>>> = f0_cpu.to_vec3()?;
 
         let mut sine_values = Vec::with_capacity(batch * length * harmonic_dim);
-        let mut uv_values = Vec::with_capacity(batch * length);
+        let mut uv_values: Vec<f32> = Vec::with_capacity(batch * length);
 
         for (batch_index, batch_f0) in f0_data.iter().enumerate() {
             let fundamental: Vec<f32> = batch_f0.iter().map(|step| step[0]).collect();
             for &value in &fundamental {
                 uv_values.push(if value > self.voiced_threshold {
-                    1.0
+                    1.0f32
                 } else {
-                    0.0
+                    0.0f32
                 });
             }
 
@@ -403,15 +411,14 @@ impl SineGen {
             .to_device(&device)?
             .to_dtype(dtype)?;
 
-        let noise_amp_voiced =
-            Tensor::full(self.noise_std, uv.shape(), &device)?.to_dtype(dtype)?;
+        let noise_amp_voiced = scalar_like(&uv, self.noise_std)?.broadcast_as(uv.shape())?;
         let noise_amp_unvoiced =
-            Tensor::full(self.sine_amp / 3.0, uv.shape(), &device)?.to_dtype(dtype)?;
+            scalar_like(&uv, self.sine_amp / 3.0)?.broadcast_as(uv.shape())?;
         let ones = Tensor::ones_like(&uv)?;
         let noise_amp = uv
             .broadcast_mul(&noise_amp_voiced)?
             .add(&uv.neg()?.add(&ones)?.broadcast_mul(&noise_amp_unvoiced)?)?;
-        let noise = Tensor::randn(0f32, 1.0, pure_sines.shape(), &device)?
+        let noise = Tensor::randn(0f32, 1f32, pure_sines.shape(), &device)?
             .to_dtype(dtype)?
             .broadcast_mul(&noise_amp.broadcast_as(pure_sines.shape())?)?;
 
@@ -470,13 +477,11 @@ impl SourceModule {
         if let Some(ref bias) = self.l_linear_bias {
             let sine_merge = sine_merge.broadcast_add(&bias.unsqueeze(0)?.unsqueeze(0)?)?;
             let sine_merge = sine_merge.tanh()?;
-            let noise =
-                Tensor::randn(0f32, 1.0, uv.shape(), f0.device())?.affine(0.1 / 3.0, 0.0)?;
+            let noise = scale_tensor(&Tensor::randn(0f32, 1f32, uv.shape(), f0.device())?, 0.1f32 / 3.0f32)?;
             Ok((sine_merge, noise, uv))
         } else {
             let sine_merge = sine_merge.tanh()?;
-            let noise =
-                Tensor::randn(0f32, 1.0, uv.shape(), f0.device())?.affine(0.1 / 3.0, 0.0)?;
+            let noise = scale_tensor(&Tensor::randn(0f32, 1f32, uv.shape(), f0.device())?, 0.1f32 / 3.0f32)?;
             Ok((sine_merge, noise, uv))
         }
     }
@@ -855,7 +860,7 @@ impl Generator {
                     Some(prev) => prev.add(&rb_out)?,
                 });
             }
-            x = xs.unwrap().affine(1.0 / self.num_kernels as f64, 0.0)?;
+            x = scale_tensor(&xs.unwrap(), 1.0f32 / self.num_kernels as f32)?;
         }
 
         x = leaky_relu(&x, 0.01)?; // PyTorch default leaky_relu slope

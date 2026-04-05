@@ -6,6 +6,10 @@
 use candle_core::{Module, Result, Tensor};
 use candle_nn::VarBuilder;
 
+fn scalar_like(tensor: &Tensor, value: f32) -> Result<Tensor> {
+    Tensor::new(value, tensor.device())?.to_dtype(tensor.dtype())
+}
+
 /// 1D convolution layer.
 pub struct Conv1d {
     weight: Tensor,
@@ -175,12 +179,12 @@ impl ConvTranspose1d {
 pub struct InstanceNorm1d {
     weight: Option<Tensor>,
     bias: Option<Tensor>,
-    eps: f64,
+    eps: f32,
 }
 
 impl InstanceNorm1d {
     /// Load from VarBuilder with affine parameters.
-    pub fn load(num_features: usize, eps: f64, affine: bool, vb: VarBuilder) -> Result<Self> {
+    pub fn load(num_features: usize, eps: f32, affine: bool, vb: VarBuilder) -> Result<Self> {
         let (weight, bias) = if affine {
             (
                 Some(vb.get(num_features, "weight")?),
@@ -201,7 +205,8 @@ impl InstanceNorm1d {
         let mean = x_f32.mean_keepdim(2)?;
         let x_centered = x_f32.broadcast_sub(&mean)?;
         let var = x_centered.sqr()?.mean_keepdim(2)?;
-        let x_normed = x_centered.broadcast_div(&(var + self.eps)?.sqrt()?)?;
+        let var = var.broadcast_add(&scalar_like(&var, self.eps)?)?;
+        let x_normed = x_centered.broadcast_div(&var.sqrt()?)?;
 
         let mut result = x_normed.to_dtype(dtype)?;
 
@@ -264,7 +269,7 @@ impl AdaIn1d {
 /// Used in Kokoro's DurationEncoder.
 pub struct AdaLayerNorm {
     fc: candle_nn::Linear,
-    eps: f64,
+    eps: f32,
     num_features: usize,
 }
 
@@ -295,7 +300,8 @@ impl AdaLayerNorm {
         let mean = x_f32.mean_keepdim(candle_core::D::Minus1)?;
         let x_centered = x_f32.broadcast_sub(&mean)?;
         let var = x_centered.sqr()?.mean_keepdim(candle_core::D::Minus1)?;
-        let x_normed = x_centered.broadcast_div(&(var + self.eps)?.sqrt()?)?;
+        let var = var.broadcast_add(&scalar_like(&var, self.eps)?)?;
+        let x_normed = x_centered.broadcast_div(&var.sqrt()?)?;
         let x_normed = x_normed.to_dtype(dtype)?;
 
         let one = Tensor::ones_like(&gamma)?;
@@ -332,7 +338,7 @@ pub fn apply_weight_norm(weight: &Tensor, weight_g: &Tensor) -> Result<Tensor> {
 pub struct ChannelNorm {
     gamma: Tensor,
     beta: Tensor,
-    eps: f64,
+    eps: f32,
 }
 
 impl ChannelNorm {
@@ -355,7 +361,8 @@ impl ChannelNorm {
         let mean = x_f32.mean_keepdim(candle_core::D::Minus1)?;
         let x_centered = x_f32.broadcast_sub(&mean)?;
         let var = x_centered.sqr()?.mean_keepdim(candle_core::D::Minus1)?;
-        let x_normed = x_centered.broadcast_div(&(var + self.eps)?.sqrt()?)?;
+        let var = var.broadcast_add(&scalar_like(&var, self.eps)?)?;
+        let x_normed = x_centered.broadcast_div(&var.sqrt()?)?;
         let x_normed = x_normed.to_dtype(dtype)?;
         x_normed
             .broadcast_mul(&self.gamma)?

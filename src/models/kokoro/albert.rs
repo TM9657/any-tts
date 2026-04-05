@@ -18,6 +18,14 @@ use candle_nn::VarBuilder;
 
 use super::config::PlbertConfig;
 
+fn scalar_like(tensor: &Tensor, value: f32) -> Result<Tensor> {
+    Tensor::new(value, tensor.device())?.to_dtype(tensor.dtype())
+}
+
+fn scale_tensor(tensor: &Tensor, value: f32) -> Result<Tensor> {
+    tensor.broadcast_mul(&scalar_like(tensor, value)?)
+}
+
 /// ALBERT model for PL-BERT text encoding.
 pub struct Albert {
     word_embeddings: candle_nn::Embedding,
@@ -150,7 +158,7 @@ impl Albert {
         // Convert 0/1 mask to additive mask: 0 → 0.0, 1 → -10000.0 inverted
         // Actually: 1 means attend, 0 means don't → we need (1-mask)*-10000
         let inv_mask = attn_mask.neg()?.add(&Tensor::ones_like(&attn_mask)?)?;
-        let attn_bias = (inv_mask * -10000.0)?;
+        let attn_bias = inv_mask.broadcast_mul(&scalar_like(&inv_mask, -10000.0)?)?;
 
         // Apply shared layer N times
         for _ in 0..self.num_hidden_layers {
@@ -254,9 +262,10 @@ impl AlbertAttention {
             .contiguous()?;
 
         // Scaled dot-product attention
-        let scale = (self.head_dim as f64).sqrt();
+        let scale = 1.0f32 / (self.head_dim as f32).sqrt();
         let k_t = k.transpose(2, 3)?.contiguous()?;
-        let attn_weights = q.matmul(&k_t)?.affine(1.0 / scale, 0.0)?;
+        let attn_weights = q.matmul(&k_t)?;
+        let attn_weights = scale_tensor(&attn_weights, scale)?;
         let attn_weights = attn_weights.broadcast_add(attn_bias)?;
         let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
 

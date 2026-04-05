@@ -15,8 +15,12 @@ use candle_nn::VarBuilder;
 use crate::layers::conv::{ChannelNorm, Conv1d};
 use crate::layers::lstm::Lstm;
 
-fn leaky_relu(x: &Tensor, negative_slope: f64) -> Result<Tensor> {
-    let scaled = (x * negative_slope)?;
+fn scalar_like(tensor: &Tensor, value: f32) -> Result<Tensor> {
+    Tensor::new(value, tensor.device())?.to_dtype(tensor.dtype())
+}
+
+fn leaky_relu(x: &Tensor, negative_slope: f32) -> Result<Tensor> {
+    let scaled = x.broadcast_mul(&scalar_like(x, negative_slope)?)?;
     x.maximum(&scaled)
 }
 
