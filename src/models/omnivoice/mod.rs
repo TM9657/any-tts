@@ -54,7 +54,8 @@ fn preferred_dtype_for(device: DeviceSelection) -> DType {
     match device {
         DeviceSelection::Cpu => DType::F32,
         DeviceSelection::Cuda(_) => DType::BF16,
-        DeviceSelection::Metal(_) => DType::F16,
+        // Metal F16 diverges from the CPU path at the first OmniVoice logits step.
+        DeviceSelection::Metal(_) => DType::F32,
         DeviceSelection::Auto => DType::BF16,
     }
 }
@@ -79,5 +80,15 @@ mod tests {
         };
         assert_eq!(choice.dtype, DType::F32);
         assert_eq!(choice.label(), "cpu (f32)");
+    }
+
+    #[test]
+    fn test_metal_runtime_prefers_f32() {
+        let choice = OmniVoiceRuntimeChoice {
+            device: DeviceSelection::Metal(0),
+            dtype: preferred_dtype_for(DeviceSelection::Metal(0)),
+        };
+        assert_eq!(choice.dtype, DType::F32);
+        assert_eq!(choice.label(), "metal:0 (f32)");
     }
 }

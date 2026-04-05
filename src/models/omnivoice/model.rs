@@ -200,14 +200,21 @@ pub struct OmniVoiceModel {
 impl TtsModel for OmniVoiceModel {
     fn load(config: TtsConfig) -> Result<Self, TtsError> {
         let compute_device = config.device.resolve()?;
-        let mut compute_dtype = env_override_dtype("OMNIVOICE_DTYPE")
-            .unwrap_or_else(|| config.dtype.to_candle());
+        let dtype_override = env_override_dtype("OMNIVOICE_DTYPE");
+        let mut compute_dtype = dtype_override.unwrap_or_else(|| config.dtype.to_candle());
         if matches!(compute_device, Device::Cpu) && compute_dtype == DType::BF16 {
             info!("BF16 is not supported on CPU; falling back to F32 for OmniVoice");
             compute_dtype = DType::F32;
-        } else if matches!(compute_device, Device::Metal(_)) && compute_dtype == DType::BF16 {
-            info!("BF16 is suboptimal on Metal; preferring F16 for OmniVoice");
-            compute_dtype = DType::F16;
+        } else if matches!(compute_device, Device::Metal(_)) {
+            if dtype_override.is_none() && compute_dtype != DType::F32 {
+                info!(
+                    "OmniVoice Metal F16/BF16 generation is numerically unstable; preferring F32"
+                );
+                compute_dtype = DType::F32;
+            } else if compute_dtype == DType::BF16 {
+                info!("BF16 is not supported on Metal for OmniVoice; preferring F32");
+                compute_dtype = DType::F32;
+            }
         }
 
         let files = config.resolve_files()?;

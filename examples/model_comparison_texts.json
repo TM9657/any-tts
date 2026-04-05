@@ -1,0 +1,17 @@
+{
+  "output_root": "output/model_comparison",
+  "samples": [
+    {
+      "id": "english_long",
+      "language_code": "en",
+      "language_name": "English",
+      "text": "This comparison sample is intentionally a little longer so every model has enough material to show pacing, articulation, and sentence transitions. We generate the same passage on CPU and Metal, one model after another, so the results are easy to compare without exhausting memory."
+    },
+    {
+      "id": "german_long",
+      "language_code": "de",
+      "language_name": "German",
+      "text": "Dieses Vergleichsbeispiel ist bewusst etwas laenger, damit jedes Modell Sprachtempo, Aussprache und Uebergaenge zwischen den Saetzen zeigen kann. Wir erzeugen denselben Text auf CPU und Metal nacheinander, damit sich die Ergebnisse leicht vergleichen lassen, ohne den Speicher zu ueberlasten."
+    }
+  ]
+}

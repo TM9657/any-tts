@@ -1,5 +1,14 @@
 //! Audio output types and utilities.
 
+use std::io::{Read, Seek};
+
+mod decode;
+mod denoise;
+
+use decode::{decode_audio_bytes, decode_audio_stream, decode_wav_bytes};
+pub use denoise::DenoiseOptions;
+use denoise::denoise_audio_samples;
+
 /// Raw audio samples produced by TTS synthesis.
 #[derive(Debug, Clone)]
 pub struct AudioSamples {
@@ -45,129 +54,62 @@ impl AudioSamples {
     /// Multi-channel audio is downmixed to mono to match the library's output
     /// convention.
     pub fn from_wav_bytes(bytes: &[u8]) -> Result<Self, crate::TtsError> {
-        if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-            return Err(crate::TtsError::AudioError(
-                "Invalid WAV header".to_string(),
-            ));
-        }
-
-        let mut offset = 12usize;
-        let mut format: Option<(u16, u16, u32, u16)> = None;
-        let mut data: Option<&[u8]> = None;
-
-        while offset + 8 <= bytes.len() {
-            let chunk_id = &bytes[offset..offset + 4];
-            let chunk_size = u32::from_le_bytes([
-                bytes[offset + 4],
-                bytes[offset + 5],
-                bytes[offset + 6],
-                bytes[offset + 7],
-            ]) as usize;
-            let chunk_start = offset + 8;
-            let chunk_end = chunk_start.saturating_add(chunk_size);
-
-            if chunk_end > bytes.len() {
-                return Err(crate::TtsError::AudioError(
-                    "Malformed WAV chunk size".to_string(),
-                ));
-            }
-
-            match chunk_id {
-                b"fmt " => {
-                    if chunk_size < 16 {
-                        return Err(crate::TtsError::AudioError(
-                            "WAV fmt chunk is too small".to_string(),
-                        ));
-                    }
-                    let audio_format =
-                        u16::from_le_bytes([bytes[chunk_start], bytes[chunk_start + 1]]);
-                    let channels =
-                        u16::from_le_bytes([bytes[chunk_start + 2], bytes[chunk_start + 3]]);
-                    let sample_rate = u32::from_le_bytes([
-                        bytes[chunk_start + 4],
-                        bytes[chunk_start + 5],
-                        bytes[chunk_start + 6],
-                        bytes[chunk_start + 7],
-                    ]);
-                    let bits_per_sample =
-                        u16::from_le_bytes([bytes[chunk_start + 14], bytes[chunk_start + 15]]);
-                    format = Some((audio_format, channels, sample_rate, bits_per_sample));
-                }
-                b"data" => {
-                    data = Some(&bytes[chunk_start..chunk_end]);
-                }
-                _ => {}
-            }
-
-            offset = chunk_end;
-            if chunk_size % 2 == 1 {
-                offset = offset.saturating_add(1);
-            }
-        }
-
-        let (audio_format, channels, sample_rate, bits_per_sample) = format
-            .ok_or_else(|| crate::TtsError::AudioError("Missing WAV fmt chunk".to_string()))?;
-        let data =
-            data.ok_or_else(|| crate::TtsError::AudioError("Missing WAV data chunk".to_string()))?;
-
-        if channels == 0 {
-            return Err(crate::TtsError::AudioError(
-                "WAV file declares zero channels".to_string(),
-            ));
-        }
-
-        let decoded: Vec<f32> = match (audio_format, bits_per_sample) {
-            (1, 8) => data
-                .iter()
-                .map(|&sample| (sample as f32 - 128.0) / 127.0)
-                .collect(),
-            (1, 16) => data
-                .chunks_exact(2)
-                .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / i16::MAX as f32)
-                .collect(),
-            (1, 24) => data
-                .chunks_exact(3)
-                .map(|chunk| {
-                    let value =
-                        ((chunk[2] as i32) << 24 >> 8) | ((chunk[1] as i32) << 8) | chunk[0] as i32;
-                    value as f32 / 8_388_607.0
-                })
-                .collect(),
-            (1, 32) => data
-                .chunks_exact(4)
-                .map(|chunk| {
-                    i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) as f32
-                        / i32::MAX as f32
-                })
-                .collect(),
-            (3, 32) => data
-                .chunks_exact(4)
-                .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                .collect(),
-            _ => {
-                return Err(crate::TtsError::AudioError(format!(
-                    "Unsupported WAV format: format={}, bits={}",
-                    audio_format, bits_per_sample
-                )))
-            }
-        };
-
-        let samples: Vec<f32> = if channels == 1 {
-            decoded
-        } else {
-            decoded
-                .chunks(channels as usize)
-                .map(|frame| frame.iter().copied().sum::<f32>() / frame.len() as f32)
-                .collect()
-        };
-
-        Ok(Self::new(samples, sample_rate))
+        decode_wav_bytes(bytes)
     }
 
     /// Decode a WAV file from disk.
     pub fn from_wav_file(path: impl AsRef<std::path::Path>) -> Result<Self, crate::TtsError> {
         let data = std::fs::read(path)?;
         Self::from_wav_bytes(&data)
+    }
+
+    /// Decode a WAV or MP3 stream into mono PCM samples.
+    ///
+    /// The input format is auto-detected. WAV is decoded directly and MP3 is
+    /// decoded through Symphonia.
+    pub fn from_audio_stream<R>(stream: R) -> Result<Self, crate::TtsError>
+    where
+        R: Read + Seek + Send + Sync + 'static,
+    {
+        decode_audio_stream(stream)
+    }
+
+    /// Decode a WAV or MP3 byte buffer into mono PCM samples.
+    pub fn from_audio_bytes(bytes: &[u8]) -> Result<Self, crate::TtsError> {
+        decode_audio_bytes(bytes)
+    }
+
+    /// Decode a WAV or MP3 file from disk.
+    pub fn from_audio_file(path: impl AsRef<std::path::Path>) -> Result<Self, crate::TtsError> {
+        let data = std::fs::read(path)?;
+        Self::from_audio_bytes(&data)
+    }
+
+    /// Decode a WAV or MP3 stream and apply speech-focused denoising.
+    pub fn denoise_audio_stream<R>(
+        stream: R,
+        options: DenoiseOptions,
+    ) -> Result<Self, crate::TtsError>
+    where
+        R: Read + Seek + Send + Sync + 'static,
+    {
+        Ok(Self::from_audio_stream(stream)?.denoise_speech(options))
+    }
+
+    /// Decode a WAV or MP3 byte buffer and apply speech-focused denoising.
+    pub fn denoise_audio_bytes(
+        bytes: &[u8],
+        options: DenoiseOptions,
+    ) -> Result<Self, crate::TtsError> {
+        Ok(Self::from_audio_bytes(bytes)?.denoise_speech(options))
+    }
+
+    /// Apply speech-focused denoising to the current audio samples.
+    ///
+    /// This is a classical DSP pass, not a learned source-separation model.
+    /// It works best on mono spoken audio with steady background noise or music.
+    pub fn denoise_speech(&self, options: DenoiseOptions) -> Self {
+        denoise_audio_samples(self, options)
     }
 
     /// Convert samples to i16 PCM (for WAV output).
@@ -338,6 +280,8 @@ impl AudioSamples {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f32::consts::PI;
+    use std::io::Cursor;
 
     #[test]
     fn test_duration_calculation() {
@@ -398,5 +342,120 @@ mod tests {
     fn test_invalid_wav_rejected() {
         let err = AudioSamples::from_wav_bytes(b"not a wav").unwrap_err();
         assert!(err.to_string().contains("Invalid WAV header"));
+    }
+
+    #[test]
+    fn test_from_audio_bytes_auto_detects_wav() {
+        let original = AudioSamples::new(vec![0.0, 0.2, -0.2, 0.5, -0.5], 16_000);
+        let decoded = AudioSamples::from_audio_bytes(&original.get_wav()).unwrap();
+
+        assert_eq!(decoded.sample_rate, original.sample_rate);
+        assert_eq!(decoded.channels, 1);
+        assert_eq!(decoded.samples.len(), original.samples.len());
+    }
+
+    #[test]
+    fn test_denoise_audio_stream_decodes_wav() {
+        let original = AudioSamples::new(synthetic_voice_like_signal(16_000, 1.0), 16_000);
+        let cleaned = AudioSamples::denoise_audio_stream(
+            Cursor::new(original.get_wav()),
+            DenoiseOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(cleaned.sample_rate, original.sample_rate);
+        assert_eq!(cleaned.channels, 1);
+        assert_eq!(cleaned.samples.len(), original.samples.len());
+    }
+
+    #[test]
+    fn test_denoise_speech_improves_snr_on_synthetic_mix() {
+        let sample_rate = 16_000;
+        let clean = synthetic_voice_like_signal(sample_rate, 2.0);
+        let noisy = mix_background_music(&clean, sample_rate);
+        let audio = AudioSamples::new(noisy.clone(), sample_rate);
+        let reference = AudioSamples::new(clean, sample_rate).denoise_speech(DenoiseOptions {
+            noise_reduction: 0.0,
+            residual_floor: 1.0,
+            wet_mix: 1.0,
+            ..DenoiseOptions::default()
+        });
+        let band_limited_noisy = AudioSamples::new(noisy.clone(), sample_rate).denoise_speech(
+            DenoiseOptions {
+                noise_reduction: 0.0,
+                residual_floor: 1.0,
+                wet_mix: 1.0,
+                ..DenoiseOptions::default()
+            },
+        );
+        let cleaned = audio.denoise_speech(DenoiseOptions::default());
+
+        let snr_before = snr_db(&reference.samples, &band_limited_noisy.samples);
+        let snr_after = snr_db(&reference.samples, &cleaned.samples);
+
+        assert!(
+            snr_after > snr_before + 0.5,
+            "Expected denoiser to improve SNR, before={snr_before:.2} dB after={snr_after:.2} dB"
+        );
+    }
+
+    #[cfg(feature = "mp3")]
+    #[test]
+    fn test_from_audio_stream_decodes_mp3() {
+        let original = AudioSamples::new(synthetic_voice_like_signal(24_000, 1.0), 24_000);
+        let decoded = AudioSamples::from_audio_stream(Cursor::new(original.get_mp3().unwrap())).unwrap();
+
+        assert_eq!(decoded.sample_rate, original.sample_rate);
+        assert!(!decoded.samples.is_empty());
+        assert!(decoded.samples.iter().any(|sample| sample.abs() > 1e-3));
+    }
+
+    fn synthetic_voice_like_signal(sample_rate: u32, duration_secs: f32) -> Vec<f32> {
+        let sample_count = (sample_rate as f32 * duration_secs) as usize;
+        (0..sample_count)
+            .map(|index| {
+                let time = index as f32 / sample_rate as f32;
+                let phrase = (2.0 * PI * 1.15 * time).sin().max(0.0).powf(1.8);
+                let syllable = (2.0 * PI * 2.6 * time).sin().abs().powf(0.8);
+                let clean = 0.45 * (2.0 * PI * 180.0 * time).sin()
+                    + 0.25 * (2.0 * PI * 360.0 * time).sin()
+                    + 0.08 * (2.0 * PI * 1_200.0 * time).sin();
+                clean * phrase * (0.2 + 0.8 * syllable)
+            })
+            .collect()
+    }
+
+    fn mix_background_music(clean: &[f32], sample_rate: u32) -> Vec<f32> {
+        let mut state = 0x1234_5678u32;
+        clean
+            .iter()
+            .enumerate()
+            .map(|(index, &sample)| {
+                let time = index as f32 / sample_rate as f32;
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let pseudo_noise = ((state >> 8) as f32 / (u32::MAX >> 8) as f32) * 2.0 - 1.0;
+                let music = 0.18 * (2.0 * PI * 110.0 * time).sin()
+                    + 0.12 * (2.0 * PI * 220.0 * time).sin()
+                    + 0.08 * (2.0 * PI * 3_600.0 * time).sin()
+                    + 0.04 * pseudo_noise;
+                (sample + music).clamp(-1.0, 1.0)
+            })
+            .collect()
+    }
+
+    fn snr_db(reference: &[f32], observed: &[f32]) -> f32 {
+        let signal_power = reference.iter().map(|sample| sample * sample).sum::<f32>()
+            / reference.len() as f32;
+        let noise_power = reference
+            .iter()
+            .zip(observed)
+            .map(|(reference, observed)| {
+                let error = observed - reference;
+                error * error
+            })
+            .sum::<f32>()
+            / reference.len() as f32;
+
+        10.0 * (signal_power / noise_power.max(1e-9)).log10()
     }
 }

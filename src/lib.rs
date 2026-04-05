@@ -59,7 +59,7 @@ pub mod traits;
 pub mod download;
 
 // Re-export primary API types
-pub use audio::AudioSamples;
+pub use audio::{AudioSamples, DenoiseOptions};
 pub use config::{ModelFiles, TtsConfig};
 pub use device::DeviceSelection;
 pub use error::TtsError;

@@ -79,6 +79,16 @@ impl TransformerBlock {
     pub fn clear_cache(&mut self) {
         self.self_attn.clear_cache();
     }
+
+    /// Snapshot the attention KV-cache for this layer.
+    pub fn cache_state(&self) -> Option<(Tensor, Tensor)> {
+        self.self_attn.cache_state()
+    }
+
+    /// Restore the attention KV-cache for this layer.
+    pub fn set_cache_state(&mut self, cache_state: Option<(Tensor, Tensor)>) {
+        self.self_attn.set_cache_state(cache_state);
+    }
 }
 
 impl std::fmt::Debug for TransformerBlock {

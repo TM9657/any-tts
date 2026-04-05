@@ -251,6 +251,16 @@ impl GroupedQueryAttention {
     pub fn clear_cache(&mut self) {
         self.kv_cache = None;
     }
+
+    /// Snapshot the current KV-cache so another caller can restore it later.
+    pub fn cache_state(&self) -> Option<(Tensor, Tensor)> {
+        self.kv_cache.clone()
+    }
+
+    /// Restore a previously captured KV-cache.
+    pub fn set_cache_state(&mut self, kv_cache: Option<(Tensor, Tensor)>) {
+        self.kv_cache = kv_cache;
+    }
 }
 
 impl std::fmt::Debug for GroupedQueryAttention {
