@@ -91,7 +91,7 @@ By default the crate enables `qwen3-tts`, `kokoro`, `omnivoice`, `vibevoice`, `v
 - `DeviceSelection::Cpu`, `DeviceSelection::Cuda(0)`, and `DeviceSelection::Metal(0)` let you force the runtime target.
 - `DType` can be set to `F32`, `F16`, or `BF16`.
 - On CPU, models that cannot safely run BF16 fall back to `F32`.
-- The native OmniVoice helper prefers `cuda:0 (bf16)`, then `metal:0 (f16)`, then `cpu (f32)`.
+- The native OmniVoice helper prefers `cuda:0 (bf16)`, then `metal:0 (f32)`, then `cpu (f32)`.
 
 ## Quick start
 
@@ -115,6 +115,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## File resolution flow
+
+## Audio cleanup
+
+```rust,no_run
+use any_tts::{AudioSamples, DenoiseOptions};
+use std::io::Cursor;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+  let input = std::fs::read("speech-with-music.mp3")?;
+  let cleaned = AudioSamples::denoise_audio_stream(
+    Cursor::new(input),
+    DenoiseOptions::default(),
+  )?;
+
+  cleaned.save_wav("speech-cleaned.wav")?;
+  Ok(())
+}
+```
+
+The denoiser auto-detects WAV and MP3 input streams and applies a speech-band
+filter plus a short-time spectral gate. It is useful for attenuating steady
+background noise and background music, but it is not a full voice-isolation or
+source-separation model.
 
 ## File resolution flow
 
@@ -152,10 +177,13 @@ cargo run --example generate_qwen3_tts --release
 cargo run --example generate_vibevoice --release --no-default-features --features vibevoice,download,metal
 cargo run --example generate_voxtral --release
 cargo run --example generate_omnivoice --release --no-default-features --features omnivoice,download,metal
+cargo run --example generate_comparison_suite --release --features metal -- --runtime all
 cargo run --example benchmark_omnivoice --release --no-default-features --features omnivoice,download,metal -- --warmup 1 --iterations 3
 ```
 
 Outputs are written under `output/` by the example binaries.
+
+`generate_comparison_suite` writes a shared English and German comparison set under `output/model_comparison/cpu/` and `output/model_comparison/metal/`, plus `report.json` files with per-model load time, per-sample synthesis time, audio duration, and realtime factor. It loads one model at a time so the full suite can run sequentially on tighter memory budgets.
 
 Note on KugelAudio: there is an in-tree `generate_kugelaudio` example, but it currently targets a non-exported `ModelType` variant and should be treated as experimental repo work rather than public API.
 
