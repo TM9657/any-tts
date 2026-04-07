@@ -14,9 +14,9 @@
 //!
 //! Output goes to `output/qwen3_tts/` in the project root.
 
-use any_tts::DeviceSelection;
 use any_tts::models::qwen3_tts::Qwen3TtsModel;
 use any_tts::traits::TtsModel;
+use any_tts::DeviceSelection;
 use any_tts::{ModelType, SynthesisRequest, TtsConfig};
 use std::env;
 use std::fs;

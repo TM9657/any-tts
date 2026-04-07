@@ -195,7 +195,10 @@ fn embedding_row(
         return normalize_embedding_row(override_embedding.clone());
     }
 
-    base_embeddings.narrow(1, position, 1)?.squeeze(0).map_err(Into::into)
+    base_embeddings
+        .narrow(1, position, 1)?
+        .squeeze(0)
+        .map_err(Into::into)
 }
 
 fn embedding_rows(
@@ -208,7 +211,10 @@ fn embedding_rows(
         .collect()
 }
 
-fn validated_sequence_len(base_embeddings: &Tensor, expected_len: usize) -> Result<usize, TtsError> {
+fn validated_sequence_len(
+    base_embeddings: &Tensor,
+    expected_len: usize,
+) -> Result<usize, TtsError> {
     let (batch, seq_len, _hidden) = base_embeddings.dims3()?;
     if batch == 1 && seq_len == expected_len {
         return Ok(seq_len);
@@ -366,10 +372,7 @@ pub fn prompt_positions(speech_input_mask: &[bool]) -> Vec<usize> {
         .collect()
 }
 
-pub fn finish_segment(
-    current_segment: &mut Vec<Tensor>,
-    finished_segments: &mut Vec<Vec<Tensor>>,
-) {
+pub fn finish_segment(current_segment: &mut Vec<Tensor>, finished_segments: &mut Vec<Vec<Tensor>>) {
     if current_segment.is_empty() {
         return;
     }

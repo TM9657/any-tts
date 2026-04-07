@@ -152,8 +152,7 @@ mod tests {
     fn test_phonemize_british_english_variant() {
         let vocab = dummy_vocab();
         let us = phonemize("schedule", "en", &vocab).expect("US phonemization should work");
-        let gb = phonemize("schedule", "en-gb", &vocab)
-            .expect("British phonemization should work");
+        let gb = phonemize("schedule", "en-gb", &vocab).expect("British phonemization should work");
 
         assert!(!us.is_empty());
         assert!(!gb.is_empty());
@@ -175,8 +174,15 @@ mod tests {
             ("नमस्ते दुनिया", "hi"),
         ] {
             let result = phonemize(text, lang, &vocab);
-            assert!(result.is_ok(), "phonemize failed for {lang}: {:?}", result.err());
-            assert!(!result.unwrap().is_empty(), "expected non-empty phonemes for {lang}");
+            assert!(
+                result.is_ok(),
+                "phonemize failed for {lang}: {:?}",
+                result.err()
+            );
+            assert!(
+                !result.unwrap().is_empty(),
+                "expected non-empty phonemes for {lang}"
+            );
         }
     }
 

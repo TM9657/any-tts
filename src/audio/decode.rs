@@ -8,7 +8,10 @@ use crate::TtsError;
 pub(super) fn decode_wav_bytes(bytes: &[u8]) -> Result<AudioSamples, TtsError> {
     let (format, data) = parse_wav_chunks(bytes)?;
     let decoded = decode_wav_data(format, data)?;
-    Ok(AudioSamples::new(downmix_to_mono(decoded, format.channels), format.sample_rate))
+    Ok(AudioSamples::new(
+        downmix_to_mono(decoded, format.channels),
+        format.sample_rate,
+    ))
 }
 
 pub(super) fn decode_audio_stream<R>(stream: R) -> Result<AudioSamples, TtsError>
@@ -77,7 +80,11 @@ fn parse_wav_chunks(bytes: &[u8]) -> Result<(WavFormat, &[u8]), TtsError> {
     Ok((format, data))
 }
 
-fn parse_wav_format(bytes: &[u8], chunk_start: usize, chunk_size: usize) -> Result<WavFormat, TtsError> {
+fn parse_wav_format(
+    bytes: &[u8],
+    chunk_start: usize,
+    chunk_size: usize,
+) -> Result<WavFormat, TtsError> {
     if chunk_size < 16 {
         return Err(TtsError::AudioError("WAV fmt chunk is too small".into()));
     }
@@ -94,7 +101,9 @@ fn parse_wav_format(bytes: &[u8], chunk_start: usize, chunk_size: usize) -> Resu
         bits_per_sample: u16::from_le_bytes([bytes[chunk_start + 14], bytes[chunk_start + 15]]),
     };
     if format.channels == 0 {
-        return Err(TtsError::AudioError("WAV file declares zero channels".into()));
+        return Err(TtsError::AudioError(
+            "WAV file declares zero channels".into(),
+        ));
     }
 
     Ok(format)
@@ -113,7 +122,8 @@ fn decode_wav_data(format: WavFormat, data: &[u8]) -> Result<Vec<f32>, TtsError>
         (1, 24) => Ok(data
             .chunks_exact(3)
             .map(|chunk| {
-                let value = ((chunk[2] as i32) << 24 >> 8) | ((chunk[1] as i32) << 8) | chunk[0] as i32;
+                let value =
+                    ((chunk[2] as i32) << 24 >> 8) | ((chunk[1] as i32) << 8) | chunk[0] as i32;
                 value as f32 / 8_388_607.0
             })
             .collect()),
@@ -167,7 +177,9 @@ fn decode_mp3_bytes(bytes: &[u8]) -> Result<AudioSamples, TtsError> {
         };
 
         if frame.sample_rate == 0 {
-            return Err(TtsError::AudioError("MP3 stream is missing a sample rate".into()));
+            return Err(TtsError::AudioError(
+                "MP3 stream is missing a sample rate".into(),
+            ));
         }
 
         match sample_rate {

@@ -82,18 +82,14 @@ pub fn text_to_phonemes(
 fn parse_language(language: &str) -> Option<SupportedLanguage> {
     match language.to_ascii_lowercase().as_str() {
         "en" | "en-us" | "en_us" | "english" | "a" => Some(SupportedLanguage::EnglishUs),
-        "en-gb" | "en_uk" | "en-gb-x-rp" | "british" | "b" => {
-            Some(SupportedLanguage::EnglishGb)
-        }
+        "en-gb" | "en_uk" | "en-gb-x-rp" | "british" | "b" => Some(SupportedLanguage::EnglishGb),
         "ja" | "jp" | "japanese" | "j" => Some(SupportedLanguage::Japanese),
         "zh" | "zh-cn" | "cmn" | "mandarin" | "z" => Some(SupportedLanguage::Chinese),
         "ko" | "korean" | "k" => Some(SupportedLanguage::Korean),
         "fr" | "french" | "f" => Some(SupportedLanguage::French),
         "de" | "german" | "d" => Some(SupportedLanguage::German),
         "it" | "italian" | "i" => Some(SupportedLanguage::Italian),
-        "pt" | "pt-br" | "pt-pt" | "portuguese" | "p" => {
-            Some(SupportedLanguage::Portuguese)
-        }
+        "pt" | "pt-br" | "pt-pt" | "portuguese" | "p" => Some(SupportedLanguage::Portuguese),
         "es" | "spanish" | "e" => Some(SupportedLanguage::Spanish),
         "hi" | "hindi" | "h" => Some(SupportedLanguage::Hindi),
         _ => None,
@@ -135,11 +131,15 @@ fn phonemize_body(text: &str, language: SupportedLanguage) -> ESpeakResult<Strin
         SupportedLanguage::Korean => phonemize_by_runs(text, phonemize_korean_run),
         SupportedLanguage::French => Ok(phonemize_french_phrase(text)),
         SupportedLanguage::German => phonemize_by_runs(text, |run| Ok(phonemize_german_word(run))),
-        SupportedLanguage::Italian => phonemize_by_runs(text, |run| Ok(phonemize_italian_word(run))),
+        SupportedLanguage::Italian => {
+            phonemize_by_runs(text, |run| Ok(phonemize_italian_word(run)))
+        }
         SupportedLanguage::Portuguese => {
             phonemize_by_runs(text, |run| Ok(phonemize_portuguese_word(run)))
         }
-        SupportedLanguage::Spanish => phonemize_by_runs(text, |run| Ok(phonemize_spanish_word(run))),
+        SupportedLanguage::Spanish => {
+            phonemize_by_runs(text, |run| Ok(phonemize_spanish_word(run)))
+        }
         SupportedLanguage::Hindi => phonemize_by_runs(text, phonemize_hindi_run),
     }
 }
@@ -250,8 +250,9 @@ fn japanese_tokenizer() -> ESpeakResult<&'static Mutex<Tokenizer>> {
     static TOKENIZER: OnceLock<ESpeakResult<Mutex<Tokenizer>>> = OnceLock::new();
 
     let state = TOKENIZER.get_or_init(|| {
-        let dictionary = load_dictionary("embedded://ipadic")
-            .map_err(|err| ESpeakError(format!("failed to load embedded Lindera dictionary: {err}")))?;
+        let dictionary = load_dictionary("embedded://ipadic").map_err(|err| {
+            ESpeakError(format!("failed to load embedded Lindera dictionary: {err}"))
+        })?;
         let segmenter = Segmenter::new(Mode::Normal, dictionary, None);
         Ok(Mutex::new(Tokenizer::new(segmenter)))
     });
@@ -714,7 +715,9 @@ fn apply_phoneme_separator(text: &str, separator: char) -> String {
     let mut previous_was_phoneme = false;
 
     for unit in units {
-        let is_punctuation = unit.chars().all(|ch| ch == ' ' || normalize_punctuation(ch).is_some());
+        let is_punctuation = unit
+            .chars()
+            .all(|ch| ch == ' ' || normalize_punctuation(ch).is_some());
         if is_punctuation {
             output.push_str(&unit);
             previous_was_phoneme = false;
@@ -847,8 +850,8 @@ fn french_liaison_sound(current_word: &str, next_word: &str) -> Option<&'static 
     match current_word {
         "est" | "petit" | "grand" => Some("t"),
         "êtes" => Some("z"),
-        "les" | "des" | "mes" | "tes" | "ses" | "nos" | "vos" | "deux" | "trois"
-        | "sont" | "vous" | "nous" => Some("z"),
+        "les" | "des" | "mes" | "tes" | "ses" | "nos" | "vos" | "deux" | "trois" | "sont"
+        | "vous" | "nous" => Some("z"),
         "un" | "mon" | "ton" | "son" | "bon" => Some("n"),
         "leurs" => Some("ʁ"),
         _ => None,
@@ -859,8 +862,27 @@ fn french_starts_with_vowel_sound(word: &str) -> bool {
     word.chars().next().is_some_and(|ch| {
         matches!(
             ch,
-            'a' | 'e' | 'h' | 'i' | 'o' | 'u' | 'y' | 'à' | 'â' | 'ä' | 'é' | 'è' | 'ê' | 'ë'
-                | 'î' | 'ï' | 'ô' | 'ö' | 'ù' | 'û' | 'ü' | 'œ'
+            'a' | 'e'
+                | 'h'
+                | 'i'
+                | 'o'
+                | 'u'
+                | 'y'
+                | 'à'
+                | 'â'
+                | 'ä'
+                | 'é'
+                | 'è'
+                | 'ê'
+                | 'ë'
+                | 'î'
+                | 'ï'
+                | 'ô'
+                | 'ö'
+                | 'ù'
+                | 'û'
+                | 'ü'
+                | 'œ'
         )
     })
 }
@@ -958,7 +980,10 @@ fn split_tone_number(pinyin: &str) -> (String, u8) {
     match pinyin.chars().last() {
         Some(ch) if ch.is_ascii_digit() => {
             let tone = ch.to_digit(10).unwrap_or(5) as u8;
-            (pinyin[..pinyin.len() - ch.len_utf8()].to_ascii_lowercase(), tone)
+            (
+                pinyin[..pinyin.len() - ch.len_utf8()].to_ascii_lowercase(),
+                tone,
+            )
         }
         _ => (pinyin.to_ascii_lowercase(), 5),
     }
@@ -966,8 +991,8 @@ fn split_tone_number(pinyin: &str) -> (String, u8) {
 
 fn split_pinyin_initial(pinyin: &str) -> (&str, &str) {
     for initial in [
-        "zh", "ch", "sh", "b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h",
-        "j", "q", "x", "r", "z", "c", "s",
+        "zh", "ch", "sh", "b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h", "j", "q", "x",
+        "r", "z", "c", "s",
     ] {
         if let Some(rest) = pinyin.strip_prefix(initial) {
             return (initial, rest);
@@ -1063,18 +1088,18 @@ const N_COUNT: u32 = V_COUNT * T_COUNT;
 const S_COUNT: u32 = L_COUNT * N_COUNT;
 
 const KOREAN_ONSETS: [&str; 19] = [
-    "k", "k", "n", "t", "t", "ɾ", "m", "p", "p", "s", "s", "", "ʧ", "ʧ", "ʧʰ",
-    "kʰ", "tʰ", "pʰ", "h",
+    "k", "k", "n", "t", "t", "ɾ", "m", "p", "p", "s", "s", "", "ʧ", "ʧ", "ʧʰ", "kʰ", "tʰ", "pʰ",
+    "h",
 ];
 
 const KOREAN_VOWELS: [&str; 21] = [
-    "a", "ɛ", "ja", "jɛ", "ʌ", "e", "jʌ", "je", "o", "wa", "wɛ", "we", "jo", "u",
-    "wʌ", "we", "wi", "ju", "ɯ", "ɰi", "i",
+    "a", "ɛ", "ja", "jɛ", "ʌ", "e", "jʌ", "je", "o", "wa", "wɛ", "we", "jo", "u", "wʌ", "we", "wi",
+    "ju", "ɯ", "ɰi", "i",
 ];
 
 const KOREAN_CODAS: [&str; 28] = [
-    "", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "p", "l", "l", "p",
-    "l", "m", "p", "p", "t", "t", "ŋ", "t", "t", "k", "t", "p", "t",
+    "", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "p", "l", "l", "p", "l", "m", "p", "p",
+    "t", "t", "ŋ", "t", "t", "k", "t", "p", "t",
 ];
 
 const CHINESE_PHRASE_PINYIN: &[(&str, &[&str])] = &[
@@ -1109,10 +1134,7 @@ const GERMAN_WORD_LIST: &[(&str, &str)] = &[
     ("implementiert", "ˌɪmpleːməntˈiːɾt"),
 ];
 
-const JAPANESE_ASCII_WORD_LIST: &[(&str, &str)] = &[
-    ("kokoro", "kokoɾo"),
-    ("rust", "ɾasɯto"),
-];
+const JAPANESE_ASCII_WORD_LIST: &[(&str, &str)] = &[("kokoro", "kokoɾo"), ("rust", "ɾasɯto")];
 
 const FRENCH_WORD_LIST: &[(&str, &str)] = &[
     ("ami", "amˈi"),
@@ -1312,7 +1334,11 @@ fn phonemize_spanish_word(word: &str) -> String {
             'ó' => push_stressed_phoneme(&mut output, "o"),
             'u' | 'ü' => output.push('u'),
             'ú' => push_stressed_phoneme(&mut output, "u"),
-            'b' | 'v' => output.push(if is_word_final(index, &chars) { 'p' } else { 'b' }),
+            'b' | 'v' => output.push(if is_word_final(index, &chars) {
+                'p'
+            } else {
+                'b'
+            }),
             'c' => {
                 if matches!(next, Some('e' | 'é' | 'i' | 'í')) {
                     output.push('s');
@@ -1320,13 +1346,21 @@ fn phonemize_spanish_word(word: &str) -> String {
                     output.push('k');
                 }
             }
-            'd' => output.push(if is_word_final(index, &chars) { 't' } else { 'd' }),
+            'd' => output.push(if is_word_final(index, &chars) {
+                't'
+            } else {
+                'd'
+            }),
             'f' => output.push('f'),
             'g' => {
                 if matches!(next, Some('e' | 'é' | 'i' | 'í')) {
                     output.push('χ');
                 } else {
-                    output.push(if is_word_final(index, &chars) { 'k' } else { 'g' });
+                    output.push(if is_word_final(index, &chars) {
+                        'k'
+                    } else {
+                        'g'
+                    });
                 }
             }
             'h' => {}
@@ -1553,9 +1587,14 @@ fn phonemize_portuguese_word(word: &str) -> String {
             chars.get(index - 1).copied()
         };
         let next = chars.get(index + 1).copied();
-        if matches!(ch, 'a' | 'e' | 'i' | 'o' | 'u' | 'á' | 'â' | 'ã' | 'é' | 'ê' | 'í' | 'ó' | 'ô' | 'õ' | 'ú')
-            && matches!(next, Some('m' | 'n'))
-            && chars.get(index + 2).map(|ch| !is_vowel(*ch)).unwrap_or(true)
+        if matches!(
+            ch,
+            'a' | 'e' | 'i' | 'o' | 'u' | 'á' | 'â' | 'ã' | 'é' | 'ê' | 'í' | 'ó' | 'ô' | 'õ' | 'ú'
+        ) && matches!(next, Some('m' | 'n'))
+            && chars
+                .get(index + 2)
+                .map(|ch| !is_vowel(*ch))
+                .unwrap_or(true)
         {
             output.push_str(match ch {
                 'a' | 'á' | 'â' => "a",
@@ -1624,13 +1663,9 @@ fn phonemize_portuguese_word(word: &str) -> String {
                 }
             }
             's' => {
-                if previous.map(is_vowel).unwrap_or(false)
-                    && next.map(is_vowel).unwrap_or(false)
-                {
+                if previous.map(is_vowel).unwrap_or(false) && next.map(is_vowel).unwrap_or(false) {
                     output.push('z');
-                } else if is_word_final(index, &chars)
-                    && previous.map(is_vowel).unwrap_or(false)
-                {
+                } else if is_word_final(index, &chars) && previous.map(is_vowel).unwrap_or(false) {
                     output.push('ʃ');
                 } else {
                     output.push('s');
@@ -1639,7 +1674,11 @@ fn phonemize_portuguese_word(word: &str) -> String {
             't' => output.push('t'),
             'v' => output.push('v'),
             'x' => output.push('ʃ'),
-            'z' => output.push(if is_word_final(index, &chars) { 'ʃ' } else { 'z' }),
+            'z' => output.push(if is_word_final(index, &chars) {
+                'ʃ'
+            } else {
+                'z'
+            }),
             '\'' | '’' => {}
             _ => output.push(ch),
         }
@@ -1756,7 +1795,12 @@ fn phonemize_german_word(word: &str) -> String {
         let ch = chars[index];
         let next = chars.get(index + 1).copied();
 
-        if next == Some(ch) && matches!(ch, 'b' | 'd' | 'f' | 'g' | 'k' | 'l' | 'm' | 'n' | 'p' | 'r' | 's' | 't') {
+        if next == Some(ch)
+            && matches!(
+                ch,
+                'b' | 'd' | 'f' | 'g' | 'k' | 'l' | 'm' | 'n' | 'p' | 'r' | 's' | 't'
+            )
+        {
             match ch {
                 'b' => output.push('b'),
                 'd' => output.push('d'),
@@ -1880,7 +1924,11 @@ fn phonemize_german_word(word: &str) -> String {
             'f' => output.push('f'),
             'g' => output.push(if index + 1 == chars.len() { 'k' } else { 'g' }),
             'h' => {
-                let previous = if index == 0 { None } else { chars.get(index - 1).copied() };
+                let previous = if index == 0 {
+                    None
+                } else {
+                    chars.get(index - 1).copied()
+                };
                 if index == 0 || previous.map(|value| !is_vowel(value)).unwrap_or(true) {
                     output.push('h');
                 }
@@ -1894,7 +1942,11 @@ fn phonemize_german_word(word: &str) -> String {
             'q' => output.push('k'),
             'r' => output.push('ʁ'),
             's' => {
-                let previous = if index == 0 { None } else { chars.get(index - 1).copied() };
+                let previous = if index == 0 {
+                    None
+                } else {
+                    chars.get(index - 1).copied()
+                };
                 if previous.map(is_vowel).unwrap_or(false) && next.map(is_vowel).unwrap_or(false) {
                     output.push('z');
                 } else {
@@ -2017,7 +2069,7 @@ fn phonemize_french_word(word: &str) -> String {
             'x' => output.push_str("ks"),
             'y' => output.push('j'),
             'z' => output.push('z'),
-            '\'' | '’' => {},
+            '\'' | '’' => {}
             _ => output.push(ch),
         }
 
@@ -2054,7 +2106,8 @@ fn german_should_hush_s(chars: &[char], index: usize) -> bool {
         return true;
     }
 
-    chars.get(index - 1)
+    chars
+        .get(index - 1)
         .copied()
         .map(|value| !is_vowel(value) && value != 's')
         .unwrap_or(false)
@@ -2078,7 +2131,10 @@ fn german_ch_sound(chars: &[char], index: usize) -> char {
 
     if previous.map(is_front_vowel).unwrap_or(false)
         || matches!(previous, Some('l' | 'n' | 'r'))
-        || matches!((before_previous, previous), (Some('e'), Some('i')) | (Some('e'), Some('u')) | (Some('ä'), Some('u')))
+        || matches!(
+            (before_previous, previous),
+            (Some('e'), Some('i')) | (Some('e'), Some('u')) | (Some('ä'), Some('u'))
+        )
     {
         'ç'
     } else {
@@ -2170,9 +2226,34 @@ fn german_split_compound(word: &str) -> Option<(&str, &str)> {
 fn is_vowel(ch: char) -> bool {
     matches!(
         ch,
-        'a' | 'e' | 'i' | 'o' | 'u' | 'y' | 'á' | 'à' | 'â' | 'ã' | 'ä' | 'é' | 'è' | 'ê'
-            | 'ë' | 'í' | 'ì' | 'î' | 'ï' | 'ó' | 'ò' | 'ô' | 'õ' | 'ö' | 'ú' | 'ù' | 'û'
-            | 'ü' | 'ă'
+        'a' | 'e'
+            | 'i'
+            | 'o'
+            | 'u'
+            | 'y'
+            | 'á'
+            | 'à'
+            | 'â'
+            | 'ã'
+            | 'ä'
+            | 'é'
+            | 'è'
+            | 'ê'
+            | 'ë'
+            | 'í'
+            | 'ì'
+            | 'î'
+            | 'ï'
+            | 'ó'
+            | 'ò'
+            | 'ô'
+            | 'õ'
+            | 'ö'
+            | 'ú'
+            | 'ù'
+            | 'û'
+            | 'ü'
+            | 'ă'
     )
 }
 
@@ -2310,7 +2391,10 @@ mod tests {
             .expect("english phonemization should work")
             .join("");
         for punctuation in [',', '.', '?', '!'] {
-            assert!(phonemes.contains(punctuation), "missing punctuation {punctuation}");
+            assert!(
+                phonemes.contains(punctuation),
+                "missing punctuation {punctuation}"
+            );
         }
     }
 
@@ -2397,13 +2481,28 @@ mod tests {
 
     #[test]
     fn test_japanese_ascii_loanwords_are_transliterated() {
-        let phonemes = text_to_phonemes("RustでKokoroの音声合成を試します。", "ja", None, false, false)
-            .expect("japanese phonemization should work")
-            .join("");
+        let phonemes = text_to_phonemes(
+            "RustでKokoroの音声合成を試します。",
+            "ja",
+            None,
+            false,
+            false,
+        )
+        .expect("japanese phonemization should work")
+        .join("");
 
-        assert!(phonemes.contains("ɾasɯto"), "unexpected Rust output: {phonemes}");
-        assert!(phonemes.contains("kokoɾo"), "unexpected Kokoro output: {phonemes}");
-        assert!(!phonemes.contains("Rust"), "raw ASCII leaked into output: {phonemes}");
+        assert!(
+            phonemes.contains("ɾasɯto"),
+            "unexpected Rust output: {phonemes}"
+        );
+        assert!(
+            phonemes.contains("kokoɾo"),
+            "unexpected Kokoro output: {phonemes}"
+        );
+        assert!(
+            !phonemes.contains("Rust"),
+            "raw ASCII leaked into output: {phonemes}"
+        );
     }
 
     #[test]
@@ -2421,7 +2520,10 @@ mod tests {
         let phonemes = text_to_phonemes("Ceci est un ami", "fr", None, false, false)
             .expect("french phonemization should work")
             .join("");
-        assert!(phonemes.contains("ɛt œ̃"), "expected est-un liaison, got {phonemes}");
+        assert!(
+            phonemes.contains("ɛt œ̃"),
+            "expected est-un liaison, got {phonemes}"
+        );
     }
 
     #[test]
@@ -2429,8 +2531,14 @@ mod tests {
         let phonemes = text_to_phonemes("Vous êtes un ami", "fr", None, false, false)
             .expect("french phonemization should work")
             .join("");
-        assert!(phonemes.contains("vuz ɛtz"), "expected vous-etes liaison, got {phonemes}");
-        assert!(phonemes.contains("œ̃n amˈi"), "expected un-ami liaison, got {phonemes}");
+        assert!(
+            phonemes.contains("vuz ɛtz"),
+            "expected vous-etes liaison, got {phonemes}"
+        );
+        assert!(
+            phonemes.contains("œ̃n amˈi"),
+            "expected un-ami liaison, got {phonemes}"
+        );
     }
 
     #[test]
@@ -2468,8 +2576,14 @@ mod tests {
         let phonemes = text_to_phonemes("Rust로 Kokoro 테스트", "ko", None, false, false)
             .expect("korean phonemization should work")
             .join("");
-        assert!(phonemes.contains("ɹˈʌst"), "unexpected Rust output: {phonemes}");
-        assert!(phonemes.contains("kəkˈɔːɹoʊ"), "unexpected Kokoro output: {phonemes}");
+        assert!(
+            phonemes.contains("ɹˈʌst"),
+            "unexpected Rust output: {phonemes}"
+        );
+        assert!(
+            phonemes.contains("kəkˈɔːɹoʊ"),
+            "unexpected Kokoro output: {phonemes}"
+        );
     }
 
     #[test]
@@ -2477,9 +2591,18 @@ mod tests {
         let phonemes = text_to_phonemes("नमस्ते Rust पाठ-से-भाषण", "hi", None, false, false)
             .expect("hindi phonemization should work")
             .join("");
-        assert!(phonemes.contains("nəmˈʌsteː"), "unexpected नमस्ते output: {phonemes}");
-        assert!(phonemes.contains("ɹˈʌst"), "unexpected Rust output: {phonemes}");
-        assert!(phonemes.contains("pˈaːʈʰseːbʰˈaːʂəɳ"), "unexpected phrase output: {phonemes}");
+        assert!(
+            phonemes.contains("nəmˈʌsteː"),
+            "unexpected नमस्ते output: {phonemes}"
+        );
+        assert!(
+            phonemes.contains("ɹˈʌst"),
+            "unexpected Rust output: {phonemes}"
+        );
+        assert!(
+            phonemes.contains("pˈaːʈʰseːbʰˈaːʂəɳ"),
+            "unexpected phrase output: {phonemes}"
+        );
     }
 
     #[test]
@@ -2487,8 +2610,14 @@ mod tests {
         let phonemes = text_to_phonemes("你好", "zh", None, false, false)
             .expect("chinese phonemization should work")
             .join("");
-        assert!(phonemes.contains("ni↗"), "expected third-tone sandhi on 你, got {phonemes}");
-        assert!(phonemes.contains("χau↓"), "expected third tone on 好, got {phonemes}");
+        assert!(
+            phonemes.contains("ni↗"),
+            "expected third-tone sandhi on 你, got {phonemes}"
+        );
+        assert!(
+            phonemes.contains("χau↓"),
+            "expected third tone on 好, got {phonemes}"
+        );
     }
 
     #[test]
@@ -2511,7 +2640,13 @@ mod tests {
         let phonemes = text_to_phonemes("AI语音TTS", "zh", None, false, false)
             .expect("mixed Chinese ASCII phonemization should work")
             .join("");
-        assert!(!phonemes.contains("AI"), "expected ASCII AI to be phonemized, got {phonemes}");
-        assert!(!phonemes.contains("TTS"), "expected ASCII TTS to be phonemized, got {phonemes}");
+        assert!(
+            !phonemes.contains("AI"),
+            "expected ASCII AI to be phonemized, got {phonemes}"
+        );
+        assert!(
+            !phonemes.contains("TTS"),
+            "expected ASCII TTS to be phonemized, got {phonemes}"
+        );
     }
 }

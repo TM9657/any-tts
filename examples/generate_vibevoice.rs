@@ -71,7 +71,10 @@ fn output_stem(output_path: &Path) -> String {
         .to_string()
 }
 
-fn write_denoise_variants(audio: &AudioSamples, output_path: &Path) -> std::io::Result<Vec<PathBuf>> {
+fn write_denoise_variants(
+    audio: &AudioSamples,
+    output_path: &Path,
+) -> std::io::Result<Vec<PathBuf>> {
     let denoise_dir = denoise_output_dir();
     fs::create_dir_all(&denoise_dir)?;
 

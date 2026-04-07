@@ -3,8 +3,8 @@
 //! Wraps the HuggingFace `tokenizers` crate for BPE tokenization used by
 //! both model backends.
 
-use crate::error::TtsError;
 use crate::config::ModelAsset;
+use crate::error::TtsError;
 use std::path::Path;
 
 /// A BPE text tokenizer loaded from vocab/merges files or a tokenizer.json.

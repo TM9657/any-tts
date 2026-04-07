@@ -90,11 +90,7 @@ const SAMPLE_REQUESTS: [(&str, &str, &str); 19] = [
         "japanese_mixed_rust",
         "RustでKokoroの音声合成を試します。",
     ),
-    (
-        "zh",
-        "chinese_nihao",
-        "你好！这是Kokoro文本转语音的测试。",
-    ),
+    ("zh", "chinese_nihao", "你好！这是Kokoro文本转语音的测试。"),
     (
         "ko",
         "korean_annyeong",

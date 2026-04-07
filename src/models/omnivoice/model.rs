@@ -936,10 +936,12 @@ fn top_k_summary(values: &[f32], count: usize) -> Vec<serde_json::Value> {
     indexed
         .into_iter()
         .take(count)
-        .map(|(token, logit)| serde_json::json!({
-            "token": token,
-            "logit": logit,
-        }))
+        .map(|(token, logit)| {
+            serde_json::json!({
+                "token": token,
+                "logit": logit,
+            })
+        })
         .collect()
 }
 

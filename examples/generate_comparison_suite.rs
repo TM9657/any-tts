@@ -168,14 +168,24 @@ fn main() {
 
     for runtime in runtimes {
         println!("=== Runtime: {} ===", runtime.key);
-        let report = run_runtime(runtime, &model_plans, &config.samples, &args.config, &output_root);
+        let report = run_runtime(
+            runtime,
+            &model_plans,
+            &config.samples,
+            &args.config,
+            &output_root,
+        );
         runtime_reports.push(report);
     }
 
     let index = SuiteIndex {
         config_path: args.config.display().to_string(),
         output_root: output_root.display().to_string(),
-        sample_ids: config.samples.iter().map(|sample| sample.id.clone()).collect(),
+        sample_ids: config
+            .samples
+            .iter()
+            .map(|sample| sample.id.clone())
+            .collect(),
         model_keys: model_plans
             .iter()
             .map(|plan| plan.key.to_string())
@@ -564,7 +574,10 @@ fn select_voice(model_type: ModelType, supported_voices: &[String]) -> Option<St
     };
 
     for candidate in preferred {
-        if let Some(voice) = supported_voices.iter().find(|voice| voice.as_str() == *candidate) {
+        if let Some(voice) = supported_voices
+            .iter()
+            .find(|voice| voice.as_str() == *candidate)
+        {
             return Some(voice.clone());
         }
     }
@@ -579,7 +592,8 @@ fn build_request(
 ) -> SynthesisRequest {
     match model_type {
         ModelType::Kokoro => {
-            let mut request = SynthesisRequest::new(&sample.text).with_language(&sample.language_code);
+            let mut request =
+                SynthesisRequest::new(&sample.text).with_language(&sample.language_code);
             if let Some(voice) = selected_voice {
                 request = request.with_voice(voice);
             }
@@ -590,7 +604,8 @@ fn build_request(
             .with_instruct(omnivoice_instruct(&sample.language_code))
             .with_cfg_scale(DEFAULT_OMNIVOICE_CFG_SCALE),
         ModelType::Qwen3Tts => {
-            let mut request = SynthesisRequest::new(&sample.text).with_language(&sample.language_code);
+            let mut request =
+                SynthesisRequest::new(&sample.text).with_language(&sample.language_code);
             if let Some(voice) = selected_voice {
                 request = request.with_voice(voice);
             }
@@ -600,7 +615,8 @@ fn build_request(
             .with_cfg_scale(DEFAULT_VIBEVOICE_CFG_SCALE)
             .with_temperature(DEFAULT_VIBEVOICE_TEMPERATURE),
         ModelType::Voxtral => {
-            let mut request = SynthesisRequest::new(&sample.text).with_language(&sample.language_code);
+            let mut request =
+                SynthesisRequest::new(&sample.text).with_language(&sample.language_code);
             if let Some(voice) = selected_voice {
                 request = request.with_voice(voice);
             }

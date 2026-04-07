@@ -12,11 +12,10 @@ use crate::traits::{ModelInfo, SynthesisRequest, TtsModel};
 use super::config::{VibeVoiceConfig, VibeVoicePreprocessorConfig};
 use super::diffusion::{DpmSolverMultistepScheduler, VibeVoiceDiffusionHead};
 use super::generation::{
-    feedback_mode, finish_segment, generation_seed, load_diffusion_noise_fixture,
-    prompt_positions, random_normal_tensor, sample_encoder_output, sample_token,
-    scale_acoustic_features, stack_latents, valid_generated_tokens, DecoderCacheState,
-    DiffusionNoiseCursor, DiffusionNoiseFixture, GenerationArtifacts, GenerationParams,
-    SimpleRng, TokenSequenceState,
+    feedback_mode, finish_segment, generation_seed, load_diffusion_noise_fixture, prompt_positions,
+    random_normal_tensor, sample_encoder_output, sample_token, scale_acoustic_features,
+    stack_latents, valid_generated_tokens, DecoderCacheState, DiffusionNoiseCursor,
+    DiffusionNoiseFixture, GenerationArtifacts, GenerationParams, SimpleRng, TokenSequenceState,
 };
 use super::loader::{
     build_processor, load_components, load_preprocessor_config, resolve_runtime_dtype,
@@ -250,7 +249,8 @@ impl VibeVoiceModel {
         let mut diffusion_noise_cursor = diffusion_noise_fixture.map(DiffusionNoiseFixture::cursor);
 
         for _step in 0..params.max_new_tokens {
-            if positive_state.next_position() >= self.config.decoder_config.max_position_embeddings {
+            if positive_state.next_position() >= self.config.decoder_config.max_position_embeddings
+            {
                 break;
             }
 
@@ -327,7 +327,10 @@ impl VibeVoiceModel {
         TokenSequenceState::from_base_embeddings(token_ids, &base, embedding_overrides)
     }
 
-    fn prefill_decode_state(&self, input_embeddings: &Tensor) -> Result<DecoderCacheState, TtsError> {
+    fn prefill_decode_state(
+        &self,
+        input_embeddings: &Tensor,
+    ) -> Result<DecoderCacheState, TtsError> {
         let mut language_model = self.language_model.lock().map_err(|_| {
             TtsError::RuntimeError("VibeVoice language model mutex poisoned".to_string())
         })?;
@@ -375,7 +378,8 @@ impl VibeVoiceModel {
         scheduler.set_timesteps(self.config.diffusion_head_config.ddpm_num_inference_steps);
 
         let condition = Tensor::cat(&[positive_condition, negative_condition], 0)?;
-        let mut speech = self.initial_diffusion_speech(diffusion_noise_cursor.as_deref_mut(), rng)?;
+        let mut speech =
+            self.initial_diffusion_speech(diffusion_noise_cursor.as_deref_mut(), rng)?;
         let cfg_scale_tensor = Tensor::new(cfg_scale, &self.device)?;
 
         for timestep in scheduler.timesteps().to_vec() {
@@ -454,12 +458,9 @@ impl VibeVoiceModel {
     ) -> Result<Tensor, TtsError> {
         let half = speech.narrow(0, 0, 1)?;
         let combined = Tensor::cat(&[&half, &half], 0)?;
-        let timestep_tensor = Tensor::from_vec(
-            vec![timestep as f32, timestep as f32],
-            (2,),
-            &self.device,
-        )?
-        .to_dtype(self.dtype)?;
+        let timestep_tensor =
+            Tensor::from_vec(vec![timestep as f32, timestep as f32], (2,), &self.device)?
+                .to_dtype(self.dtype)?;
         let eps = self
             .prediction_head
             .forward(&combined, &timestep_tensor, condition)?;
@@ -497,7 +498,9 @@ impl VibeVoiceModel {
             .forward(&semantic_last.unsqueeze(1)?)?
             .squeeze(0)?
             .squeeze(0)?;
-        acoustic_embed.broadcast_add(&semantic_embed).map_err(Into::into)
+        acoustic_embed
+            .broadcast_add(&semantic_embed)
+            .map_err(Into::into)
     }
 
     fn decode_segments(&self, segments: &[Vec<Tensor>]) -> Result<Vec<f32>, TtsError> {

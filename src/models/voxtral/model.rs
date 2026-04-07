@@ -1561,13 +1561,14 @@ fn load_voice_tensor(
     dtype: DType,
 ) -> Result<Tensor, TtsError> {
     let bytes = asset.read_bytes()?;
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes.as_ref())).map_err(|err| {
-        TtsError::WeightLoadError(format!(
-            "Failed to open Voxtral voice embedding '{}': {}",
-            asset.display_name(),
-            err
-        ))
-    })?;
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(bytes.as_ref())).map_err(|err| {
+            TtsError::WeightLoadError(format!(
+                "Failed to open Voxtral voice embedding '{}': {}",
+                asset.display_name(),
+                err
+            ))
+        })?;
 
     let data_pkl = archive
         .file_names()

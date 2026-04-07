@@ -305,9 +305,7 @@ impl KokoroModel {
         let ext = first.extension().unwrap_or("");
 
         match ext {
-            "safetensors" => {
-                ModelFiles::load_safetensors_vb(weight_assets, dtype, device)
-            }
+            "safetensors" => ModelFiles::load_safetensors_vb(weight_assets, dtype, device),
             "pth" => {
                 // Load PyTorch .pth via candle's pickle support.
                 //
@@ -332,10 +330,8 @@ impl KokoroModel {
                 ];
 
                 for top_key in &top_keys {
-                    let sub_tensors = Self::load_tensors_from_pth_bytes(
-                        archive_bytes.as_ref(),
-                        Some(top_key),
-                    )?;
+                    let sub_tensors =
+                        Self::load_tensors_from_pth_bytes(archive_bytes.as_ref(), Some(top_key))?;
 
                     for (name, tensor) in sub_tensors {
                         let full_name = format!("{}.{}", top_key, name);
@@ -398,9 +394,11 @@ impl KokoroModel {
             ))
         })?;
 
-        let voice_asset = voices_dir.load_file(&format!("{}.pt", voice_name)).map_err(|_| {
-            TtsError::UnknownVoice(format!("Voice file not found: {}.pt", voice_name))
-        })?;
+        let voice_asset = voices_dir
+            .load_file(&format!("{}.pt", voice_name))
+            .map_err(|_| {
+                TtsError::UnknownVoice(format!("Voice file not found: {}.pt", voice_name))
+            })?;
 
         info!("Loading voice embedding: {}", voice_asset.display_name());
 
@@ -744,7 +742,9 @@ impl KokoroModel {
             .filter_map(|name| {
                 let path = std::path::Path::new(&name);
                 if path.extension().and_then(|ext| ext.to_str()) == Some("pt") {
-                    path.file_stem().and_then(|stem| stem.to_str()).map(String::from)
+                    path.file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .map(String::from)
                 } else {
                     None
                 }
@@ -820,7 +820,10 @@ impl KokoroModel {
             .collect::<Vec<_>>();
 
         let mut tensor_infos = Vec::new();
-        for file_name in zip_file_names.iter().filter(|name| name.ends_with("data.pkl")) {
+        for file_name in zip_file_names
+            .iter()
+            .filter(|name| name.ends_with("data.pkl"))
+        {
             let dir_name = std::path::PathBuf::from(
                 file_name
                     .strip_suffix(".pkl")

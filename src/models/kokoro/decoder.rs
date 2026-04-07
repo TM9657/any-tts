@@ -412,8 +412,7 @@ impl SineGen {
             .to_dtype(dtype)?;
 
         let noise_amp_voiced = scalar_like(&uv, self.noise_std)?.broadcast_as(uv.shape())?;
-        let noise_amp_unvoiced =
-            scalar_like(&uv, self.sine_amp / 3.0)?.broadcast_as(uv.shape())?;
+        let noise_amp_unvoiced = scalar_like(&uv, self.sine_amp / 3.0)?.broadcast_as(uv.shape())?;
         let ones = Tensor::ones_like(&uv)?;
         let noise_amp = uv
             .broadcast_mul(&noise_amp_voiced)?
@@ -477,11 +476,17 @@ impl SourceModule {
         if let Some(ref bias) = self.l_linear_bias {
             let sine_merge = sine_merge.broadcast_add(&bias.unsqueeze(0)?.unsqueeze(0)?)?;
             let sine_merge = sine_merge.tanh()?;
-            let noise = scale_tensor(&Tensor::randn(0f32, 1f32, uv.shape(), f0.device())?, 0.1f32 / 3.0f32)?;
+            let noise = scale_tensor(
+                &Tensor::randn(0f32, 1f32, uv.shape(), f0.device())?,
+                0.1f32 / 3.0f32,
+            )?;
             Ok((sine_merge, noise, uv))
         } else {
             let sine_merge = sine_merge.tanh()?;
-            let noise = scale_tensor(&Tensor::randn(0f32, 1f32, uv.shape(), f0.device())?, 0.1f32 / 3.0f32)?;
+            let noise = scale_tensor(
+                &Tensor::randn(0f32, 1f32, uv.shape(), f0.device())?,
+                0.1f32 / 3.0f32,
+            )?;
             Ok((sine_merge, noise, uv))
         }
     }

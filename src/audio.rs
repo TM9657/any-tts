@@ -6,8 +6,8 @@ mod decode;
 mod denoise;
 
 use decode::{decode_audio_bytes, decode_audio_stream, decode_wav_bytes};
-pub use denoise::DenoiseOptions;
 use denoise::denoise_audio_samples;
+pub use denoise::DenoiseOptions;
 
 /// Raw audio samples produced by TTS synthesis.
 #[derive(Debug, Clone)]
@@ -176,7 +176,6 @@ impl AudioSamples {
         }
         std::fs::write(path, self.get_wav())
     }
-
 }
 
 #[cfg(test)]
@@ -285,14 +284,13 @@ mod tests {
             wet_mix: 1.0,
             ..DenoiseOptions::default()
         });
-        let band_limited_noisy = AudioSamples::new(noisy.clone(), sample_rate).denoise_speech(
-            DenoiseOptions {
+        let band_limited_noisy =
+            AudioSamples::new(noisy.clone(), sample_rate).denoise_speech(DenoiseOptions {
                 noise_reduction: 0.0,
                 residual_floor: 1.0,
                 wet_mix: 1.0,
                 ..DenoiseOptions::default()
-            },
-        );
+            });
         let cleaned = audio.denoise_speech(DenoiseOptions::default());
 
         let snr_before = snr_db(&reference.samples, &band_limited_noisy.samples);
@@ -350,8 +348,8 @@ mod tests {
     }
 
     fn snr_db(reference: &[f32], observed: &[f32]) -> f32 {
-        let signal_power = reference.iter().map(|sample| sample * sample).sum::<f32>()
-            / reference.len() as f32;
+        let signal_power =
+            reference.iter().map(|sample| sample * sample).sum::<f32>() / reference.len() as f32;
         let noise_power = reference
             .iter()
             .zip(observed)

@@ -196,7 +196,10 @@ fn cached_file_path(
 
 #[cfg(feature = "download")]
 fn partial_file_path(path: &std::path::Path) -> std::path::PathBuf {
-    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("download");
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("download");
     path.parent()
         .unwrap_or_else(|| std::path::Path::new("."))
         .join(format!(".{file_name}.part"))
@@ -229,10 +232,7 @@ fn resolve_bearer_token(
 
 #[cfg(feature = "download")]
 fn token_path(cache_root: &std::path::Path) -> std::path::PathBuf {
-    cache_root
-        .parent()
-        .unwrap_or(cache_root)
-        .join("token")
+    cache_root.parent().unwrap_or(cache_root).join("token")
 }
 
 #[cfg(feature = "download")]

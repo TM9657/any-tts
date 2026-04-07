@@ -54,7 +54,10 @@ pub(super) fn build_processor(
     preprocessor_config: &VibeVoicePreprocessorConfig,
 ) -> Result<VibeVoiceProcessor, TtsError> {
     let tokenizer = TextTokenizer::from_asset(
-        files.tokenizer.as_ref().expect("validated by resolve_files"),
+        files
+            .tokenizer
+            .as_ref()
+            .expect("validated by resolve_files"),
     )?;
     let tokenizer_spec = VibeVoiceTokenizerSpec::from_tokenizer(&tokenizer)?;
     Ok(VibeVoiceProcessor::new(

@@ -52,7 +52,9 @@ impl ModelAsset {
     pub fn file_name(&self) -> Option<&str> {
         match self {
             Self::Path(path) => path.file_name().and_then(|name| name.to_str()),
-            Self::Bytes { name, .. } => Path::new(name).file_name().and_then(|value| value.to_str()),
+            Self::Bytes { name, .. } => {
+                Path::new(name).file_name().and_then(|value| value.to_str())
+            }
         }
     }
 
@@ -72,9 +74,7 @@ impl ModelAsset {
 
     pub fn read_bytes(&self) -> Result<Arc<[u8]>, TtsError> {
         match self {
-            Self::Path(path) => std::fs::read(path)
-                .map(Arc::from)
-                .map_err(TtsError::from),
+            Self::Path(path) => std::fs::read(path).map(Arc::from).map_err(TtsError::from),
             Self::Bytes { data, .. } => Ok(data.clone()),
         }
     }
@@ -175,10 +175,13 @@ impl ModelAssetBundle {
 
     fn get(&self, relative_path: &str) -> Option<ModelAsset> {
         let relative_path = normalize_asset_path(relative_path);
-        self.entries.get(&relative_path).cloned().map(|data| ModelAsset::Bytes {
-            name: relative_path,
-            data,
-        })
+        self.entries
+            .get(&relative_path)
+            .cloned()
+            .map(|data| ModelAsset::Bytes {
+                name: relative_path,
+                data,
+            })
     }
 
     fn collect_directory(&self, prefix: &str) -> Option<ModelAssetDir> {
@@ -520,7 +523,9 @@ impl ModelFiles {
     /// Scan an in-memory asset bundle for well-known model files.
     pub fn fill_from_asset_bundle(&mut self, bundle: &ModelAssetBundle) {
         if self.config.is_none() {
-            self.config = bundle.get("config.json").or_else(|| bundle.get("params.json"));
+            self.config = bundle
+                .get("config.json")
+                .or_else(|| bundle.get("params.json"));
         }
 
         if self.tokenizer.is_none() {
@@ -558,14 +563,18 @@ impl ModelFiles {
 
         for nested_dir_name in ["audio_tokenizer", "speech_tokenizer"] {
             if self.speech_tokenizer_config.is_none() {
-                self.speech_tokenizer_config = bundle.get(format!("{nested_dir_name}/config.json").as_str());
+                self.speech_tokenizer_config =
+                    bundle.get(format!("{nested_dir_name}/config.json").as_str());
             }
 
             if self.speech_tokenizer_weights.is_empty() {
-                if let Some(asset) = bundle.get(format!("{nested_dir_name}/model.safetensors").as_str()) {
+                if let Some(asset) =
+                    bundle.get(format!("{nested_dir_name}/model.safetensors").as_str())
+                {
                     self.speech_tokenizer_weights.push(asset);
                 } else {
-                    self.speech_tokenizer_weights = bundle.discover_sharded_weights(nested_dir_name);
+                    self.speech_tokenizer_weights =
+                        bundle.discover_sharded_weights(nested_dir_name);
                 }
             }
         }
@@ -653,11 +662,7 @@ impl ModelFiles {
         let mut all_tensors: HashMap<String, candle_core::Tensor> = HashMap::new();
         for asset in assets {
             let data = asset.read_bytes().map_err(|e| {
-                TtsError::WeightLoadError(format!(
-                    "Failed to read {}: {}",
-                    asset.display_name(),
-                    e
-                ))
+                TtsError::WeightLoadError(format!("Failed to read {}: {}", asset.display_name(), e))
             })?;
             let tensors = safetensors::SafeTensors::deserialize(&data).map_err(|e| {
                 TtsError::WeightLoadError(format!(
@@ -910,7 +915,8 @@ impl ModelFiles {
             );
             if let Ok(p) = download(tokenizer_repo, "model.safetensors") {
                 self.speech_tokenizer_weights.push(ModelAsset::from_path(p));
-            } else if let Ok(index_path) = download(tokenizer_repo, "model.safetensors.index.json") {
+            } else if let Ok(index_path) = download(tokenizer_repo, "model.safetensors.index.json")
+            {
                 if let Ok(content) = std::fs::read_to_string(&index_path) {
                     if let Ok(index) = serde_json::from_str::<serde_json::Value>(&content) {
                         if let Some(weight_map) =
@@ -976,7 +982,9 @@ impl ModelFiles {
         if self.speech_tokenizer_weights.is_empty() {
             if let Ok(p) = download(model_id, "audio_tokenizer/model.safetensors") {
                 self.speech_tokenizer_weights.push(ModelAsset::from_path(p));
-            } else if let Ok(index_path) = download(model_id, "audio_tokenizer/model.safetensors.index.json") {
+            } else if let Ok(index_path) =
+                download(model_id, "audio_tokenizer/model.safetensors.index.json")
+            {
                 if let Ok(content) = std::fs::read_to_string(&index_path) {
                     if let Ok(index) = serde_json::from_str::<serde_json::Value>(&content) {
                         if let Some(weight_map) =
@@ -1039,7 +1047,9 @@ impl ModelFiles {
         for voice_name in voices.keys() {
             let path = download(model_id, &format!("voice_embedding/{voice_name}.pt"))?;
             if discovered_dir.is_none() {
-                discovered_dir = path.parent().map(|parent| ModelAssetDir::from_path(parent.to_path_buf()));
+                discovered_dir = path
+                    .parent()
+                    .map(|parent| ModelAssetDir::from_path(parent.to_path_buf()));
             }
         }
 
@@ -1552,7 +1562,8 @@ impl TtsConfig {
             }
             Some(ModelAssetDir::Path(path)) => {
                 self.files.voices_dir = Some(ModelAssetDir::Path(path));
-                self.asset_bundle.insert_bytes(format!("voices/{voice_file}"), bytes);
+                self.asset_bundle
+                    .insert_bytes(format!("voices/{voice_file}"), bytes);
             }
             None => {
                 let mut entries = BTreeMap::new();
@@ -1581,19 +1592,16 @@ impl TtsConfig {
         file_name: impl Into<String>,
         bytes: impl Into<Vec<u8>>,
     ) -> Self {
-        self.files.speech_tokenizer_weights.push(ModelAsset::from_bytes(
-            file_name.into(),
-            bytes,
-        ));
+        self.files
+            .speech_tokenizer_weights
+            .push(ModelAsset::from_bytes(file_name.into(), bytes));
         self
     }
 
     /// Set **all speech tokenizer weight files** at once (Qwen3-TTS only).
     pub fn with_speech_tokenizer_weight_files(mut self, paths: Vec<PathBuf>) -> Self {
-        self.files.speech_tokenizer_weights = paths
-            .into_iter()
-            .map(ModelAsset::from_path)
-            .collect();
+        self.files.speech_tokenizer_weights =
+            paths.into_iter().map(ModelAsset::from_path).collect();
         self
     }
 
@@ -1608,8 +1616,10 @@ impl TtsConfig {
 
     /// Set the speech-tokenizer config from in-memory bytes.
     pub fn with_speech_tokenizer_config_bytes(mut self, bytes: impl Into<Vec<u8>>) -> Self {
-        self.files.speech_tokenizer_config =
-            Some(ModelAsset::from_bytes("speech_tokenizer/config.json", bytes));
+        self.files.speech_tokenizer_config = Some(ModelAsset::from_bytes(
+            "speech_tokenizer/config.json",
+            bytes,
+        ));
         self
     }
 
@@ -1624,7 +1634,8 @@ impl TtsConfig {
 
     /// Set `generation_config.json` from in-memory bytes.
     pub fn with_generation_config_bytes(mut self, bytes: impl Into<Vec<u8>>) -> Self {
-        self.files.generation_config = Some(ModelAsset::from_bytes("generation_config.json", bytes));
+        self.files.generation_config =
+            Some(ModelAsset::from_bytes("generation_config.json", bytes));
         self
     }
 
@@ -1639,10 +1650,8 @@ impl TtsConfig {
 
     /// Set `preprocessor_config.json` from in-memory bytes.
     pub fn with_preprocessor_config_bytes(mut self, bytes: impl Into<Vec<u8>>) -> Self {
-        self.files.preprocessor_config = Some(ModelAsset::from_bytes(
-            "preprocessor_config.json",
-            bytes,
-        ));
+        self.files.preprocessor_config =
+            Some(ModelAsset::from_bytes("preprocessor_config.json", bytes));
         self
     }
 
@@ -1827,6 +1836,8 @@ mod tests {
     fn test_model_asset_manifest_is_available() {
         let requirements = ModelType::Voxtral.asset_requirements();
         assert!(!requirements.is_empty());
-        assert!(requirements.iter().any(|entry| entry.pattern == "voice_embedding/*.pt"));
+        assert!(requirements
+            .iter()
+            .any(|entry| entry.pattern == "voice_embedding/*.pt"));
     }
 }

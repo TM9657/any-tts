@@ -16,11 +16,7 @@ pub(crate) struct SpeechConnector {
 }
 
 impl SpeechConnector {
-    pub(crate) fn load(
-        input_dim: usize,
-        output_dim: usize,
-        vb: VarBuilder,
-    ) -> CandleResult<Self> {
+    pub(crate) fn load(input_dim: usize, output_dim: usize, vb: VarBuilder) -> CandleResult<Self> {
         let fc1 = candle_nn::linear(input_dim, output_dim, vb.pp("fc1"))?;
         let norm = RmsNorm::load(output_dim, 1e-6, vb.pp("norm"))?;
         let fc2 = candle_nn::linear(output_dim, output_dim, vb.pp("fc2"))?;
@@ -175,13 +171,7 @@ impl VibeVoiceLanguageModel {
     ) -> CandleResult<Tensor> {
         let mut hidden = input_embeds.clone();
         for layer in &mut self.layers {
-            hidden = layer.forward(
-                &hidden,
-                &self.rope_cos,
-                &self.rope_sin,
-                start_pos,
-                mask,
-            )?;
+            hidden = layer.forward(&hidden, &self.rope_cos, &self.rope_sin, start_pos, mask)?;
         }
         self.norm.forward(&hidden)
     }
@@ -226,7 +216,9 @@ fn connector_output_dims(original_dims: &[usize], hidden_dim: usize) -> Option<V
 }
 
 fn reshape_connector_output(hidden: Tensor, original_dims: &[usize]) -> CandleResult<Tensor> {
-    let Some(output_dims) = connector_output_dims(original_dims, hidden.dim(candle_core::D::Minus1)?) else {
+    let Some(output_dims) =
+        connector_output_dims(original_dims, hidden.dim(candle_core::D::Minus1)?)
+    else {
         return Ok(hidden);
     };
 
@@ -254,7 +246,10 @@ fn causal_mask(seq_len: usize, device: &Device, dtype: DType) -> CandleResult<Op
 
 fn step_input_embeddings(input_embedding: &Tensor) -> Result<Tensor, TtsError> {
     match input_embedding.rank() {
-        1 => input_embedding.unsqueeze(0)?.unsqueeze(0).map_err(Into::into),
+        1 => input_embedding
+            .unsqueeze(0)?
+            .unsqueeze(0)
+            .map_err(Into::into),
         2 => input_embedding.unsqueeze(0).map_err(Into::into),
         3 => Ok(input_embedding.clone()),
         _ => Err(TtsError::ModelError(

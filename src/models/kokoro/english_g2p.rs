@@ -89,10 +89,7 @@ fn starts_with_vowel_sound(word: &str) -> bool {
         return false;
     }
 
-    if matches!(
-        normalized.as_str(),
-        "honest" | "honor" | "hour" | "heir"
-    ) {
+    if matches!(normalized.as_str(), "honest" | "honor" | "hour" | "heir") {
         return true;
     }
 
@@ -338,17 +335,37 @@ fn phonemize_fallback(word: &str, british: bool) -> String {
         }
 
         match chars[index] {
-            'a' => output.push_str(if has_magic_e(&chars, index) { "eɪ" } else { "æ" }),
+            'a' => output.push_str(if has_magic_e(&chars, index) {
+                "eɪ"
+            } else {
+                "æ"
+            }),
             'e' => {
                 if index + 1 == chars.len() {
                     index += 1;
                     continue;
                 }
-                output.push_str(if has_magic_e(&chars, index) { "iː" } else { "ɛ" });
+                output.push_str(if has_magic_e(&chars, index) {
+                    "iː"
+                } else {
+                    "ɛ"
+                });
             }
-            'i' => output.push_str(if has_magic_e(&chars, index) { "aɪ" } else { "ɪ" }),
-            'o' => output.push_str(if has_magic_e(&chars, index) { "oʊ" } else { "ɑ" }),
-            'u' => output.push_str(if has_magic_e(&chars, index) { "juː" } else { "ʌ" }),
+            'i' => output.push_str(if has_magic_e(&chars, index) {
+                "aɪ"
+            } else {
+                "ɪ"
+            }),
+            'o' => output.push_str(if has_magic_e(&chars, index) {
+                "oʊ"
+            } else {
+                "ɑ"
+            }),
+            'u' => output.push_str(if has_magic_e(&chars, index) {
+                "juː"
+            } else {
+                "ʌ"
+            }),
             'y' => {
                 if index == 0 && chars.get(index + 1).copied().map(is_vowel).unwrap_or(false) {
                     output.push('j');
@@ -359,18 +376,32 @@ fn phonemize_fallback(word: &str, british: bool) -> String {
                 }
             }
             'b' => output.push('b'),
-            'c' => output.push(if chars.get(index + 1).copied().map(is_soft_vowel).unwrap_or(false) {
-                's'
-            } else {
-                'k'
-            }),
+            'c' => output.push(
+                if chars
+                    .get(index + 1)
+                    .copied()
+                    .map(is_soft_vowel)
+                    .unwrap_or(false)
+                {
+                    's'
+                } else {
+                    'k'
+                },
+            ),
             'd' => output.push('d'),
             'f' => output.push('f'),
-            'g' => output.push(if chars.get(index + 1).copied().map(is_soft_vowel).unwrap_or(false) {
-                'ʤ'
-            } else {
-                'g'
-            }),
+            'g' => output.push(
+                if chars
+                    .get(index + 1)
+                    .copied()
+                    .map(is_soft_vowel)
+                    .unwrap_or(false)
+                {
+                    'ʤ'
+                } else {
+                    'g'
+                },
+            ),
             'h' => output.push('h'),
             'j' => output.push('ʤ'),
             'k' => output.push('k'),
@@ -568,11 +599,15 @@ fn past_tense_suffix(previous: char) -> &'static str {
 }
 
 fn ends_with_sibilant(base: &str) -> bool {
-    ["s", "z", "ʃ", "ʒ", "ʧ", "ʤ"].iter().any(|suffix| base.ends_with(suffix))
+    ["s", "z", "ʃ", "ʒ", "ʧ", "ʤ"]
+        .iter()
+        .any(|suffix| base.ends_with(suffix))
 }
 
 fn ends_with_voiceless(base: &str) -> bool {
-    ["p", "t", "k", "f", "θ", "s", "ʃ", "ʧ", "ks"].iter().any(|suffix| base.ends_with(suffix))
+    ["p", "t", "k", "f", "θ", "s", "ʃ", "ʧ", "ks"]
+        .iter()
+        .any(|suffix| base.ends_with(suffix))
 }
 
 fn starts_with(chars: &[char], index: usize, pattern: &str) -> bool {
@@ -587,7 +622,11 @@ fn starts_with(chars: &[char], index: usize, pattern: &str) -> bool {
 fn has_magic_e(chars: &[char], index: usize) -> bool {
     chars.get(index + 2) == Some(&'e')
         && index + 3 == chars.len()
-        && chars.get(index + 1).copied().map(|ch| !is_vowel(ch)).unwrap_or(false)
+        && chars
+            .get(index + 1)
+            .copied()
+            .map(|ch| !is_vowel(ch))
+            .unwrap_or(false)
 }
 
 fn voiced_th(chars: &[char], index: usize) -> bool {
@@ -730,15 +769,24 @@ mod tests {
         assert!(us.contains("ˌeɪˈaɪ"), "unexpected AI output: {us}");
         assert!(us.contains("ʤˌiːpˌiːjˈuː"), "unexpected GPU output: {us}");
         assert!(gb.starts_with("ɐ "), "unexpected article output: {gb}");
-        assert!(gb.contains("ˌeɪʧtˌiːtˌiːpˈiː"), "unexpected HTTP output: {gb}");
+        assert!(
+            gb.contains("ˌeɪʧtˌiːtˌiːpˈiː"),
+            "unexpected HTTP output: {gb}"
+        );
     }
 
     #[test]
     fn test_schedule_differs_by_dialect() {
         let us = phonemize_clause("The schedule changed on Thursday.", false);
         let gb = phonemize_clause("The schedule changed on Thursday.", true);
-        assert!(us.contains("skɛʤuːl"), "unexpected US schedule output: {us}");
-        assert!(gb.contains("ʃˈɛdjuːl"), "unexpected GB schedule output: {gb}");
+        assert!(
+            us.contains("skɛʤuːl"),
+            "unexpected US schedule output: {us}"
+        );
+        assert!(
+            gb.contains("ʃˈɛdjuːl"),
+            "unexpected GB schedule output: {gb}"
+        );
         assert_ne!(us, gb);
     }
 

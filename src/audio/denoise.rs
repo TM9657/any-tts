@@ -58,7 +58,14 @@ pub(super) fn denoise_audio_samples(audio: &AudioSamples, options: DenoiseOption
     let fft = planner.plan_fft_forward(config.frame_size);
     let ifft = planner.plan_fft_inverse(config.frame_size);
     let noise_profile = estimate_noise_profile(&filtered, &config, &window, fft.as_ref());
-    let cleaned = render_denoised_samples(&filtered, &config, &window, fft.as_ref(), ifft.as_ref(), &noise_profile);
+    let cleaned = render_denoised_samples(
+        &filtered,
+        &config,
+        &window,
+        fft.as_ref(),
+        ifft.as_ref(),
+        &noise_profile,
+    );
 
     AudioSamples::new(cleaned, audio.sample_rate)
 }
@@ -86,10 +93,11 @@ fn estimate_noise_profile(
 }
 
 fn select_quiet_frame_offsets(samples: &[f32], config: &SanitizedDenoiseOptions) -> Vec<usize> {
-    let mut ranked: Vec<(usize, f32)> = frame_offsets(samples.len(), config.frame_size, config.hop_size)
-        .into_iter()
-        .map(|start| (start, frame_rms(samples, start, config.frame_size)))
-        .collect();
+    let mut ranked: Vec<(usize, f32)> =
+        frame_offsets(samples.len(), config.frame_size, config.hop_size)
+            .into_iter()
+            .map(|start| (start, frame_rms(samples, start, config.frame_size)))
+            .collect();
     ranked.sort_by(|left, right| left.1.partial_cmp(&right.1).unwrap_or(Ordering::Equal));
 
     ranked
@@ -103,8 +111,7 @@ fn quiet_frame_count(samples: &[f32], config: &SanitizedDenoiseOptions) -> usize
     let total_frames = frame_offsets(samples.len(), config.frame_size, config.hop_size)
         .len()
         .max(1);
-    ((total_frames as f32 * config.noise_estimation_percentile)
-        .ceil() as usize)
+    ((total_frames as f32 * config.noise_estimation_percentile).ceil() as usize)
         .clamp(1, total_frames)
 }
 
@@ -329,7 +336,12 @@ impl Biquad {
         Self::from_coefficients(sample_rate, cutoff_hz, q, FilterKind::LowPass)
     }
 
-    fn from_coefficients(sample_rate: u32, cutoff_hz: f32, q: f32, kind: FilterKind) -> Option<Self> {
+    fn from_coefficients(
+        sample_rate: u32,
+        cutoff_hz: f32,
+        q: f32,
+        kind: FilterKind,
+    ) -> Option<Self> {
         if sample_rate == 0 || cutoff_hz <= 0.0 || cutoff_hz >= sample_rate as f32 * 0.5 {
             return None;
         }
@@ -339,8 +351,16 @@ impl Biquad {
         let cos_omega = omega.cos();
         let alpha = sin_omega / (2.0 * q.max(1e-3));
         let (b0, b1, b2) = match kind {
-            FilterKind::LowPass => ((1.0 - cos_omega) * 0.5, 1.0 - cos_omega, (1.0 - cos_omega) * 0.5),
-            FilterKind::HighPass => ((1.0 + cos_omega) * 0.5, -(1.0 + cos_omega), (1.0 + cos_omega) * 0.5),
+            FilterKind::LowPass => (
+                (1.0 - cos_omega) * 0.5,
+                1.0 - cos_omega,
+                (1.0 - cos_omega) * 0.5,
+            ),
+            FilterKind::HighPass => (
+                (1.0 + cos_omega) * 0.5,
+                -(1.0 + cos_omega),
+                (1.0 + cos_omega) * 0.5,
+            ),
         };
         let a0 = 1.0 + alpha;
 
