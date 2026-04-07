@@ -642,10 +642,11 @@ fn estimated_syllables(word: &str) -> usize {
 
     for (index, ch) in chars.iter().copied().enumerate() {
         let current_is_vowel = is_vowel(ch);
-        if current_is_vowel && !previous_was_vowel {
-            if !(ch == 'e' && index + 1 == chars.len() && count > 0 && !word.ends_with("le")) {
-                count += 1;
-            }
+        if current_is_vowel
+            && !previous_was_vowel
+            && !(ch == 'e' && index + 1 == chars.len() && count > 0 && !word.ends_with("le"))
+        {
+            count += 1;
         }
         previous_was_vowel = current_is_vowel;
     }

@@ -378,8 +378,7 @@ impl VibeVoiceModel {
         scheduler.set_timesteps(self.config.diffusion_head_config.ddpm_num_inference_steps);
 
         let condition = Tensor::cat(&[positive_condition, negative_condition], 0)?;
-        let mut speech =
-            self.initial_diffusion_speech(diffusion_noise_cursor.as_deref_mut(), rng)?;
+        let mut speech = self.initial_diffusion_speech(diffusion_noise_cursor, rng)?;
         let cfg_scale_tensor = Tensor::new(cfg_scale, &self.device)?;
 
         for timestep in scheduler.timesteps().to_vec() {

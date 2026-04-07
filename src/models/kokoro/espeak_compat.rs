@@ -315,7 +315,7 @@ fn chinese_units(text: &str) -> Vec<ChineseUnit> {
             if !literal.is_empty() {
                 units.push(ChineseUnit::Literal(std::mem::take(&mut literal)));
             }
-            let (base, tone) = split_tone_number(pinyin.with_tone_num_end().as_ref());
+            let (base, tone) = split_tone_number(pinyin.with_tone_num_end());
             units.push(ChineseUnit::Syllable { base, tone });
         } else if ch.is_ascii_alphanumeric() {
             literal.push(ch);
@@ -672,7 +672,7 @@ fn split_phrase_tokens(text: &str) -> Vec<PhraseToken> {
     tokens
 }
 
-fn next_phrase_run<'a>(tokens: &'a [PhraseToken], index: usize) -> Option<&'a str> {
+fn next_phrase_run(tokens: &[PhraseToken], index: usize) -> Option<&str> {
     let mut cursor = index + 1;
     let mut saw_space = false;
 
@@ -795,7 +795,7 @@ fn strip_lang_switch_flags(text: &str) -> String {
 
         let mut flag = String::new();
         let mut valid = true;
-        while let Some(next) = chars.next() {
+        for next in chars.by_ref() {
             if next == ')' {
                 break;
             }

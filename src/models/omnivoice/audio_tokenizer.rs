@@ -151,7 +151,7 @@ impl DacDecoderBlock {
             output_dim,
             2 * stride,
             stride,
-            (stride + 1) / 2,
+            stride.div_ceil(2),
             stride % 2,
             1,
             true,

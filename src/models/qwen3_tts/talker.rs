@@ -179,7 +179,7 @@ impl TalkerLm {
 
         let mut h = embeds.clone();
 
-        for (_i, layer) in self.layers.iter_mut().enumerate() {
+        for layer in self.layers.iter_mut() {
             h = layer.forward(&h, &self.rope_cos, &self.rope_sin, start_pos, mask.as_ref())?;
         }
 
