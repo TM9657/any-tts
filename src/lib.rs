@@ -42,6 +42,8 @@
 //! let audio = model.synthesize(&request).unwrap();
 //!
 //! // audio.samples contains f32 PCM data at model.sample_rate() Hz
+//! let wav_bytes = audio.get_wav();
+//! let _ = wav_bytes;
 //! ```
 
 pub mod audio;
@@ -60,11 +62,14 @@ pub mod download;
 
 // Re-export primary API types
 pub use audio::{AudioSamples, DenoiseOptions};
-pub use config::{ModelFiles, TtsConfig};
+pub use config::{
+    preferred_runtime_choice, preferred_runtime_choices, DType, ModelAsset, ModelAssetBundle,
+    ModelAssetDir, ModelFiles, RuntimeChoice, TtsConfig,
+};
 pub use device::DeviceSelection;
 pub use error::TtsError;
 pub use mel::{MelConfig, MelSpectrogram};
-pub use models::ModelType;
+pub use models::{ModelAssetRequirement, ModelType};
 pub use traits::{
     ModelInfo, ReferenceAudio, SynthesisRequest, TtsModel, VoiceCloning, VoiceEmbedding,
 };

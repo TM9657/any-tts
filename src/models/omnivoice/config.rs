@@ -16,8 +16,11 @@ pub struct OmniVoiceConfig {
 
 impl OmniVoiceConfig {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TtsError> {
-        let content = std::fs::read_to_string(path)?;
-        let mut config: Self = serde_json::from_str(&content)?;
+        Self::from_bytes(std::fs::read(path)?)
+    }
+
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, TtsError> {
+        let mut config: Self = serde_json::from_slice(bytes.as_ref())?;
         if config.audio_codebook_weights.is_empty() {
             config.audio_codebook_weights = vec![8.0, 8.0, 6.0, 6.0, 4.0, 4.0, 2.0, 2.0];
         }
@@ -70,8 +73,11 @@ pub struct OmniVoiceAudioTokenizerConfig {
 
 impl OmniVoiceAudioTokenizerConfig {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TtsError> {
-        let content = std::fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
+        Self::from_bytes(std::fs::read(path)?)
+    }
+
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, TtsError> {
+        Ok(serde_json::from_slice(bytes.as_ref())?)
     }
 
     pub fn hop_length(&self) -> usize {

@@ -50,9 +50,12 @@ impl TtsModel for VibeVoiceModel {
         let device = config.device.resolve()?;
         let dtype = resolve_runtime_dtype(&device, config.dtype.to_candle());
         let files = config.resolve_files()?;
-        let model_config = VibeVoiceConfig::from_file(
-            files.config.as_ref().expect("validated by resolve_files"),
-        )?;
+        let config_bytes = files
+            .config
+            .as_ref()
+            .expect("validated by resolve_files")
+            .read_bytes()?;
+        let model_config = VibeVoiceConfig::from_bytes(config_bytes.as_ref())?;
         let preprocessor_config = load_preprocessor_config(&files)?;
         let processor = build_processor(&files, &preprocessor_config)?;
         let components = load_components(&files, &model_config, &device, dtype)?;

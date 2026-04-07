@@ -58,8 +58,11 @@ pub struct VoxtralTokenizer {
 
 impl VoxtralTokenizer {
     pub fn from_file(path: impl AsRef<Path>, config: &VoxtralConfig) -> Result<Self, TtsError> {
-        let content = std::fs::read_to_string(path)?;
-        let tekken: TekkenFile = serde_json::from_str(&content)?;
+        Self::from_bytes(std::fs::read(path)?, config)
+    }
+
+    pub fn from_bytes(bytes: impl AsRef<[u8]>, config: &VoxtralConfig) -> Result<Self, TtsError> {
+        let tekken: TekkenFile = serde_json::from_slice(bytes.as_ref())?;
 
         let num_special_tokens = tekken.config.default_num_special_tokens as u32;
         let inner_vocab_size = tekken

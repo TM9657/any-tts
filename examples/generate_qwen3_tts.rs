@@ -3,9 +3,6 @@
 //! Run with:
 //!   cargo run --example generate_qwen3_tts --release
 //!
-//! With MP3 output:
-//!   cargo run --example generate_qwen3_tts --release --features mp3
-//!
 //! Force CPU output into a dedicated folder:
 //!   QWEN3_TTS_DEVICE=cpu QWEN3_TTS_OUTPUT_DIR=output/qwen3_tts/cpu cargo run --example generate_qwen3_tts --release
 //!
@@ -167,13 +164,6 @@ fn render_samples(model: &Qwen3TtsModel, output_dir: &Path) {
                 let wav_path = output_dir.join(format!("{stem}.wav"));
                 audio.save_wav(&wav_path).expect("Failed to write WAV");
                 println!("  ✓ {}", wav_path.display());
-
-                #[cfg(feature = "mp3")]
-                {
-                    let mp3_path = output_dir.join(format!("{stem}.mp3"));
-                    audio.save_mp3(&mp3_path).expect("Failed to write MP3");
-                    println!("  ✓ {}", mp3_path.display());
-                }
             }
             Err(e) => eprintln!("  ✗ {e}"),
         }

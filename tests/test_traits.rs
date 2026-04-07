@@ -99,11 +99,11 @@ fn test_tts_config_individual_file_builders() {
         .with_generation_config_file("/cache/cde/generation_config.json");
 
     assert_eq!(
-        config.files.config.as_deref(),
+        config.files.config.as_ref().and_then(any_tts::ModelAsset::as_path),
         Some(std::path::Path::new("/cache/abc/config.json"))
     );
     assert_eq!(
-        config.files.tokenizer.as_deref(),
+        config.files.tokenizer.as_ref().and_then(any_tts::ModelAsset::as_path),
         Some(std::path::Path::new("/cache/def/tokenizer.json"))
     );
     assert_eq!(config.files.weights.len(), 2);

@@ -2,11 +2,29 @@
 name = "any-tts"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.83"
 description = "A Rust TTS library with Candle backends and runtime adapters for modern open TTS models"
 license = "MIT OR Apache-2.0"
+readme = "README.md"
+homepage = "https://flow-like.com"
+documentation = "https://docs.rs/any-tts"
 repository = "https://github.com/TM9657/any-tts"
 keywords = ["tts", "text-to-speech", "candle", "ml", "audio"]
 categories = ["multimedia::audio", "science"]
+include = [
+	"/README.md",
+	"/CODE_OF_CONDUCT.md",
+	"/CONTRIBUTING.md",
+	"/SECURITY.md",
+	"/SUPPORT.md",
+	"/examples/**",
+	"/src/**",
+	"/tests/**",
+]
+
+[package.metadata.docs.rs]
+no-default-features = true
+features = ["download"]
 
 [features]
 default = ["qwen3-tts", "kokoro", "omnivoice", "vibevoice", "voxtral", "download"]
@@ -14,12 +32,11 @@ cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
 accelerate = ["candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
 qwen3-tts = []
-kokoro = ["dep:espeak-rs"]
+kokoro = ["dep:kana2phone", "dep:lindera", "dep:pinyin"]
 omnivoice = []
 vibevoice = []
 voxtral = []
-download = ["dep:hf-hub"]
-mp3 = ["dep:mp3lame-encoder"]
+download = ["dep:reqwest"]
 
 [dependencies]
 base64 = "0.22"
@@ -29,17 +46,18 @@ candle-transformers = "0.9.2"
 rustc-hash = "1.1"
 rustfft = "6"
 safetensors = "0.7.0"
-symphonia = { version = "0.5", default-features = false, features = ["mp3", "wav", "pcm"] }
+nanomp3 = "0.1.1"
 tiktoken-rs = "0.9.1"
 tokenizers = "0.22.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
-zip = { version = "7", default-features = false }
-hf-hub = { version = "0.4", optional = true }
-mp3lame-encoder = { version = "0.2", optional = true }
-espeak-rs = { version = "0.1", optional = true }
+zip = { version = "7.2", default-features = false }
+kana2phone = { version = "0.3", optional = true }
+lindera = { version = "2.3.4", default-features = false, features = ["embed-ipadic"], optional = true }
+pinyin = { version = "0.11", default-features = false, features = ["plain", "with_tone_num_end"], optional = true }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls"] }
 
 [dev-dependencies]
 hound = "3.5"

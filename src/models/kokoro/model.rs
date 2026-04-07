@@ -20,14 +20,13 @@
 //! based on input length.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use candle_core::{DType, Device, IndexOp, Module, Tensor};
 use candle_nn::VarBuilder;
 use tracing::info;
 
 use crate::audio::AudioSamples;
-use crate::config::{ModelFiles, TtsConfig};
+use crate::config::{ModelAsset, ModelAssetDir, ModelFiles, TtsConfig};
 use crate::error::{TtsError, TtsResult};
 use crate::traits::{
     ModelInfo, ReferenceAudio, SynthesisRequest, TtsModel, VoiceCloning, VoiceEmbedding,
@@ -60,7 +59,7 @@ pub struct KokoroModel {
     decoder: IstftDecoder,
     device: Device,
     dtype: DType,
-    voices_dir: Option<PathBuf>,
+    voices_dir: Option<ModelAssetDir>,
     /// Style encoder pair for voice cloning (if weights were found).
     style_encoder: Option<StyleEncoder>,
     /// Cached voice embeddings: voice_name → [MAX_VOICE_POSITIONS, FULL_STYLE_DIM]
@@ -103,11 +102,12 @@ impl TtsModel for KokoroModel {
         }
 
         // Parse model config
-        let config_path = files
+        let config_bytes = files
             .config
             .as_ref()
-            .ok_or_else(|| TtsError::FileMissing("config.json".into()))?;
-        let kokoro_config = KokoroConfig::from_file(config_path)?;
+            .ok_or_else(|| TtsError::FileMissing("config.json".into()))?
+            .read_bytes()?;
+        let kokoro_config = KokoroConfig::from_bytes(config_bytes.as_ref())?;
 
         info!(
             "Loading Kokoro-82M: hidden_dim={}, style_dim={}, n_token={}, vocab_size={}",
@@ -259,6 +259,7 @@ impl TtsModel for KokoroModel {
     fn supported_languages(&self) -> Vec<String> {
         vec![
             "en".into(),
+            "en-gb".into(),
             "ja".into(),
             "zh".into(),
             "ko".into(),
@@ -292,21 +293,20 @@ impl KokoroModel {
     ///
     /// Supports both SafeTensors (`.safetensors`) and PyTorch (`.pth`) formats.
     fn load_weights(
-        weight_paths: &[PathBuf],
+        weight_assets: &[ModelAsset],
         dtype: DType,
         device: &Device,
     ) -> Result<VarBuilder<'static>, TtsError> {
-        if weight_paths.is_empty() {
+        if weight_assets.is_empty() {
             return Err(TtsError::FileMissing("model weights".into()));
         }
 
-        let first = &weight_paths[0];
-        let ext = first.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let first = &weight_assets[0];
+        let ext = first.extension().unwrap_or("");
 
         match ext {
             "safetensors" => {
-                let paths: Vec<PathBuf> = weight_paths.iter().map(|p| p.to_path_buf()).collect();
-                ModelFiles::load_safetensors_vb(&paths, dtype, device)
+                ModelFiles::load_safetensors_vb(weight_assets, dtype, device)
             }
             "pth" => {
                 // Load PyTorch .pth via candle's pickle support.
@@ -317,12 +317,12 @@ impl KokoroModel {
                 // Additionally, each sub-dict has a `.module.` prefix from
                 // DataParallel wrapping.
                 //
-                // Candle's PthTensors only handles flat state dicts, so we
-                // load each sub-dict separately using the `key` parameter,
-                // prefix the tensor names, and strip `.module.`.
-                info!("Loading .pth weights from {}", first.display());
+                // We parse the archive from raw bytes so the same path works
+                // for filesystem-backed assets and object-store byte blobs.
+                info!("Loading .pth weights from {}", first.display_name());
 
                 let mut tensors: HashMap<String, Tensor> = HashMap::new();
+                let archive_bytes = first.read_bytes()?;
                 let top_keys = [
                     "bert",
                     "bert_encoder",
@@ -332,26 +332,15 @@ impl KokoroModel {
                 ];
 
                 for top_key in &top_keys {
-                    let sub_pth = candle_core::pickle::PthTensors::new(first, Some(top_key))
-                        .map_err(|e| {
-                            TtsError::WeightLoadError(format!(
-                                "Failed to load .pth sub-dict '{}': {}",
-                                top_key, e
-                            ))
-                        })?;
+                    let sub_tensors = Self::load_tensors_from_pth_bytes(
+                        archive_bytes.as_ref(),
+                        Some(top_key),
+                    )?;
 
-                    for (name, _) in sub_pth.tensor_infos().iter() {
-                        if let Some(tensor) = sub_pth.get(name).map_err(|e| {
-                            TtsError::WeightLoadError(format!(
-                                "Failed to read tensor '{}.{}': {}",
-                                top_key, name, e
-                            ))
-                        })? {
-                            // Build full path: "{top_key}.{name}" with .module. stripped
-                            let full_name = format!("{}.{}", top_key, name);
-                            let clean_name = full_name.replace(".module.", ".");
-                            tensors.insert(clean_name, tensor);
-                        }
+                    for (name, tensor) in sub_tensors {
+                        let full_name = format!("{}.{}", top_key, name);
+                        let clean_name = full_name.replace(".module.", ".");
+                        tensors.insert(clean_name, tensor);
                     }
                 }
 
@@ -409,18 +398,14 @@ impl KokoroModel {
             ))
         })?;
 
-        let voice_path = voices_dir.join(format!("{}.pt", voice_name));
-        if !voice_path.exists() {
-            return Err(TtsError::UnknownVoice(format!(
-                "Voice file not found: {}",
-                voice_path.display()
-            )));
-        }
+        let voice_asset = voices_dir.load_file(&format!("{}.pt", voice_name)).map_err(|_| {
+            TtsError::UnknownVoice(format!("Voice file not found: {}.pt", voice_name))
+        })?;
 
-        info!("Loading voice embedding: {}", voice_path.display());
+        info!("Loading voice embedding: {}", voice_asset.display_name());
 
         // Load .pt tensor — Kokoro voice files contain a bare tensor (not a dict)
-        let voice_data = Self::load_bare_pt_tensor(&voice_path)?;
+        let voice_data = Self::load_bare_pt_tensor(&voice_asset)?;
         let voice_data = voice_data.to_device(&self.device)?.to_dtype(self.dtype)?;
 
         // Cache it
@@ -441,23 +426,21 @@ impl KokoroModel {
     /// which candle's `PthTensors` cannot handle. We use candle's public
     /// `Stack` + `Object` API and the `zip` crate to parse the pickle
     /// and read the tensor data directly.
-    fn load_bare_pt_tensor(path: &std::path::Path) -> TtsResult<Tensor> {
-        use std::io::{BufReader, Read};
+    fn load_bare_pt_tensor(asset: &ModelAsset) -> TtsResult<Tensor> {
+        use std::io::{BufReader, Cursor, Read};
 
-        // First try the standard PthTensors approach (for dict-wrapped tensors)
-        let pth = candle_core::pickle::PthTensors::new(path, None)
-            .map_err(|e| TtsError::WeightLoadError(format!("Failed to open .pt: {}", e)))?;
+        let bytes = asset.read_bytes()?;
+
+        // First try dict-wrapped tensors.
+        let dict_tensors = Self::load_tensors_from_pth_bytes(bytes.as_ref(), None)?;
         for key in &["", "0", "data", "weight"] {
-            if let Ok(Some(t)) = pth.get(key) {
-                return Ok(t);
+            if let Some(tensor) = dict_tensors.get(*key) {
+                return Ok(tensor.clone());
             }
         }
 
         // Fall back to bare-tensor parsing for non-dict .pt files
-        let file = std::fs::File::open(path).map_err(|e| {
-            TtsError::WeightLoadError(format!("Cannot open {}: {}", path.display(), e))
-        })?;
-        let mut zip = zip::ZipArchive::new(BufReader::new(file))
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes.as_ref()))
             .map_err(|e| TtsError::WeightLoadError(format!("Invalid .pt ZIP: {}", e)))?;
 
         // Find the .pkl file and the data directory prefix
@@ -495,10 +478,7 @@ impl KokoroModel {
 
         // Read the raw tensor data from the ZIP
         // Re-open the ZIP since we consumed the reader
-        let file2 = std::fs::File::open(path).map_err(|e| {
-            TtsError::WeightLoadError(format!("Cannot reopen {}: {}", path.display(), e))
-        })?;
-        let mut zip2 = zip::ZipArchive::new(BufReader::new(file2))
+        let mut zip2 = zip::ZipArchive::new(Cursor::new(bytes.as_ref()))
             .map_err(|e| TtsError::WeightLoadError(format!("Invalid .pt ZIP: {}", e)))?;
 
         let data_path = &tensor_info.path;
@@ -758,13 +738,13 @@ impl KokoroModel {
             None => return Ok(Vec::new()),
         };
 
-        let entries = std::fs::read_dir(voices_dir)?;
-        let mut names: Vec<String> = entries
-            .filter_map(|e| e.ok())
-            .filter_map(|e| {
-                let path = e.path();
+        let mut names: Vec<String> = voices_dir
+            .file_names()?
+            .into_iter()
+            .filter_map(|name| {
+                let path = std::path::Path::new(&name);
                 if path.extension().and_then(|ext| ext.to_str()) == Some("pt") {
-                    path.file_stem().and_then(|n| n.to_str()).map(String::from)
+                    path.file_stem().and_then(|stem| stem.to_str()).map(String::from)
                 } else {
                     None
                 }
@@ -811,6 +791,150 @@ impl KokoroModel {
         }
 
         se.encode(audio, self.dtype)
+    }
+
+    fn load_tensors_from_pth_bytes(
+        bytes: &[u8],
+        key: Option<&str>,
+    ) -> Result<HashMap<String, Tensor>, TtsError> {
+        let mut tensors = HashMap::new();
+        for tensor_info in Self::read_pth_tensor_info_from_bytes(bytes, key)? {
+            let tensor = Self::read_tensor_from_pth_bytes(bytes, &tensor_info)?;
+            tensors.insert(tensor_info.name.clone(), tensor);
+        }
+        Ok(tensors)
+    }
+
+    fn read_pth_tensor_info_from_bytes(
+        bytes: &[u8],
+        key: Option<&str>,
+    ) -> Result<Vec<candle_core::pickle::TensorInfo>, TtsError> {
+        use candle_core::pickle::{Object, Stack};
+
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| {
+            TtsError::WeightLoadError(format!("Failed to open .pth archive: {}", e))
+        })?;
+        let zip_file_names = zip
+            .file_names()
+            .map(|name| name.to_string())
+            .collect::<Vec<_>>();
+
+        let mut tensor_infos = Vec::new();
+        for file_name in zip_file_names.iter().filter(|name| name.ends_with("data.pkl")) {
+            let dir_name = std::path::PathBuf::from(
+                file_name
+                    .strip_suffix(".pkl")
+                    .ok_or_else(|| TtsError::WeightLoadError("Missing .pkl suffix".into()))?,
+            );
+            let reader = zip.by_name(file_name).map_err(|e| {
+                TtsError::WeightLoadError(format!("Failed to read {}: {}", file_name, e))
+            })?;
+            let mut reader = std::io::BufReader::new(reader);
+            let mut stack = Stack::empty();
+            stack.read_loop(&mut reader).map_err(|e| {
+                TtsError::WeightLoadError(format!("Pickle parse error in {}: {}", file_name, e))
+            })?;
+            let obj = stack.finalize().map_err(|e| {
+                TtsError::WeightLoadError(format!("Pickle finalize error in {}: {}", file_name, e))
+            })?;
+
+            let obj = match obj {
+                Object::Build { callable, args } => match *callable {
+                    Object::Reduce { callable, args: _ } => match *callable {
+                        Object::Class {
+                            module_name,
+                            class_name,
+                        } if module_name == "__torch__" && class_name == "Module" => *args,
+                        _ => continue,
+                    },
+                    _ => continue,
+                },
+                obj => obj,
+            };
+
+            let obj = if let Some(key) = key {
+                if let Object::Dict(key_values) = obj {
+                    key_values
+                        .into_iter()
+                        .find(|(k, _)| *k == Object::Unicode(key.to_string()))
+                        .map(|(_, value)| value)
+                        .ok_or_else(|| {
+                            TtsError::WeightLoadError(format!("Missing .pth key '{}'", key))
+                        })?
+                } else {
+                    obj
+                }
+            } else {
+                obj
+            };
+
+            if let Object::Dict(key_values) = obj {
+                for (name, value) in key_values {
+                    match value.into_tensor_info(name, &dir_name) {
+                        Ok(Some(tensor_info)) => tensor_infos.push(tensor_info),
+                        Ok(None) => {}
+                        Err(_) => {}
+                    }
+                }
+            }
+        }
+
+        Ok(tensor_infos)
+    }
+
+    fn read_tensor_from_pth_bytes(
+        bytes: &[u8],
+        tensor_info: &candle_core::pickle::TensorInfo,
+    ) -> Result<Tensor, TtsError> {
+        use std::io::Read;
+
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| {
+            TtsError::WeightLoadError(format!("Failed to open .pth archive: {}", e))
+        })?;
+        let mut reader = zip.by_name(&tensor_info.path).map_err(|e| {
+            TtsError::WeightLoadError(format!(
+                "Failed to open tensor payload '{}': {}",
+                tensor_info.path, e
+            ))
+        })?;
+        let is_fortran_contiguous = tensor_info.layout.is_fortran_contiguous();
+        let rank = tensor_info.layout.shape().rank();
+
+        if !tensor_info.layout.is_contiguous() && !is_fortran_contiguous {
+            return Err(TtsError::WeightLoadError(format!(
+                "Unsupported non-contiguous tensor layout for '{}'",
+                tensor_info.name
+            )));
+        }
+
+        let start_offset = tensor_info.layout.start_offset();
+        if start_offset > 0 {
+            std::io::copy(
+                &mut reader.by_ref().take(start_offset as u64),
+                &mut std::io::sink(),
+            )
+            .map_err(TtsError::from)?;
+        }
+
+        let elem_count = tensor_info.layout.shape().elem_count();
+        let byte_count = elem_count * tensor_info.dtype.size_in_bytes();
+        let mut raw = vec![0u8; byte_count];
+        reader.read_exact(&mut raw)?;
+        let tensor = Tensor::from_raw_buffer(
+            &raw,
+            tensor_info.dtype,
+            tensor_info.layout.shape().dims(),
+            &Device::Cpu,
+        )?;
+
+        if rank > 1 && is_fortran_contiguous {
+            let shape_reversed: Vec<_> = tensor_info.layout.dims().iter().rev().copied().collect();
+            let tensor = tensor.reshape(shape_reversed)?;
+            let dim_indices_reversed: Vec<_> = (0..rank).rev().collect();
+            Ok(tensor.permute(dim_indices_reversed)?)
+        } else {
+            Ok(tensor)
+        }
     }
 }
 

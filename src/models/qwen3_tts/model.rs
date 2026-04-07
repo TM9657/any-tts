@@ -55,8 +55,12 @@ impl TtsModel for Qwen3TtsModel {
         let files = config.resolve_files()?;
 
         // ── Parse model config ────────────────────────────────────────
-        let config_path = files.config.as_ref().expect("validated by resolve_files");
-        let model_config = Qwen3TtsConfig::from_file(config_path)?;
+        let config_bytes = files
+            .config
+            .as_ref()
+            .expect("validated by resolve_files")
+            .read_bytes()?;
+        let model_config = Qwen3TtsConfig::from_bytes(config_bytes.as_ref())?;
 
         info!(
             "Qwen3-TTS config loaded: type={}, talker layers={}, hidden_size={}, code_groups={}",
@@ -311,7 +315,7 @@ impl Qwen3TtsModel {
             .tokenizer
             .as_ref()
             .expect("validated by resolve_files");
-        let tokenizer = TextTokenizer::from_file(tokenizer_path)?;
+        let tokenizer = TextTokenizer::from_asset(tokenizer_path)?;
 
         // Build the chat template: <|im_start|>assistant\n{text}<|im_end|>\n<|im_start|>assistant\n
         let template_text = format!(

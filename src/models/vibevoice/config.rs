@@ -28,8 +28,11 @@ pub struct VibeVoiceConfig {
 
 impl VibeVoiceConfig {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TtsError> {
-        let json = std::fs::read_to_string(path)?;
-        serde_json::from_str(&json)
+        Self::from_bytes(std::fs::read(path)?)
+    }
+
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, TtsError> {
+        serde_json::from_slice(bytes.as_ref())
             .map_err(|e| TtsError::ConfigError(format!("Failed to parse VibeVoice config: {}", e)))
     }
 }
@@ -265,8 +268,11 @@ impl Default for VibeVoicePreprocessorConfig {
 
 impl VibeVoicePreprocessorConfig {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TtsError> {
-        let json = std::fs::read_to_string(path)?;
-        serde_json::from_str(&json).map_err(|e| {
+        Self::from_bytes(std::fs::read(path)?)
+    }
+
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, TtsError> {
+        serde_json::from_slice(bytes.as_ref()).map_err(|e| {
             TtsError::ConfigError(format!(
                 "Failed to parse VibeVoice preprocessor config: {}",
                 e

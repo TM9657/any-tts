@@ -4,6 +4,7 @@
 //! both model backends.
 
 use crate::error::TtsError;
+use crate::config::ModelAsset;
 use std::path::Path;
 
 /// A BPE text tokenizer loaded from vocab/merges files or a tokenizer.json.
@@ -17,6 +18,22 @@ impl TextTokenizer {
         let inner = tokenizers::Tokenizer::from_file(path.as_ref())
             .map_err(|e| TtsError::TokenizerError(format!("Failed to load tokenizer: {}", e)))?;
         Ok(Self { inner })
+    }
+
+    /// Load a tokenizer from in-memory `tokenizer.json` bytes.
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, TtsError> {
+        let inner = tokenizers::Tokenizer::from_bytes(bytes)
+            .map_err(|e| TtsError::TokenizerError(format!("Failed to load tokenizer: {}", e)))?;
+        Ok(Self { inner })
+    }
+
+    /// Load a tokenizer from a resolved model asset.
+    pub fn from_asset(asset: &ModelAsset) -> Result<Self, TtsError> {
+        if let Some(path) = asset.as_path() {
+            return Self::from_file(path);
+        }
+        let bytes = asset.read_bytes()?;
+        Self::from_bytes(bytes.as_ref())
     }
 
     /// Load a tokenizer from a pretrained model directory.

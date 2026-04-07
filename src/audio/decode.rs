@@ -1,13 +1,6 @@
 use std::io::{Read, Seek};
 
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
-use symphonia::default::{get_codecs, get_probe};
+use nanomp3::{Channels as Mp3Channels, Decoder as Mp3Decoder, MAX_SAMPLES_PER_FRAME};
 
 use super::AudioSamples;
 use crate::TtsError;
@@ -22,7 +15,13 @@ pub(super) fn decode_audio_stream<R>(stream: R) -> Result<AudioSamples, TtsError
 where
     R: Read + Seek + Send + Sync + 'static,
 {
-    decode_with_symphonia(StreamMediaSource(stream))
+    let mut bytes = Vec::new();
+    let mut stream = stream;
+    stream
+        .read_to_end(&mut bytes)
+        .map_err(|err| TtsError::AudioError(format!("Failed to read audio stream: {err}")))?;
+
+    decode_audio_bytes(&bytes)
 }
 
 pub(super) fn decode_audio_bytes(bytes: &[u8]) -> Result<AudioSamples, TtsError> {
@@ -30,7 +29,7 @@ pub(super) fn decode_audio_bytes(bytes: &[u8]) -> Result<AudioSamples, TtsError>
         return decode_wav_bytes(bytes);
     }
 
-    decode_audio_stream(std::io::Cursor::new(bytes.to_vec()))
+    decode_mp3_bytes(bytes)
 }
 
 fn is_wav_bytes(bytes: &[u8]) -> bool {
@@ -147,72 +146,81 @@ fn downmix_to_mono(samples: Vec<f32>, channels: u16) -> Vec<f32> {
         .collect()
 }
 
-fn decode_with_symphonia<S>(source: S) -> Result<AudioSamples, TtsError>
-where
-    S: MediaSource + Send + Sync + 'static,
-{
-    let stream = MediaSourceStream::new(Box::new(source), MediaSourceStreamOptions::default());
-    let probed = get_probe()
-        .format(
-            &Hint::new(),
-            stream,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
-        .map_err(|err| TtsError::AudioError(format!("Unsupported audio stream: {err}")))?;
-
-    let mut format = probed.format;
-    let track = format
-        .default_track()
-        .ok_or_else(|| TtsError::AudioError("Audio stream has no default track".into()))?;
-    let sample_rate = track
-        .codec_params
-        .sample_rate
-        .ok_or_else(|| TtsError::AudioError("Audio stream is missing a sample rate".into()))?;
-    let track_id = track.id;
-    let mut decoder = get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|err| TtsError::AudioError(format!("Failed to create decoder: {err}")))?;
-
+fn decode_mp3_bytes(bytes: &[u8]) -> Result<AudioSamples, TtsError> {
+    let mut decoder = Mp3Decoder::new();
+    let mut pcm = [0.0f32; MAX_SAMPLES_PER_FRAME];
+    let mut sample_rate = None;
     let mut samples = Vec::new();
-    loop {
-        let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(SymphoniaError::IoError(err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => break,
-            Err(err) => return Err(TtsError::AudioError(format!("Failed to read audio packet: {err}"))),
-        };
+    let mut offset = 0usize;
 
-        if packet.track_id() != track_id {
-            continue;
+    while offset < bytes.len() {
+        let (consumed, frame) = decoder.decode(&bytes[offset..], &mut pcm);
+
+        if consumed == 0 && frame.is_none() {
+            break;
         }
 
-        let decoded = match decoder.decode(&packet) {
-            Ok(decoded) => decoded,
-            Err(SymphoniaError::DecodeError(_)) => continue,
-            Err(SymphoniaError::IoError(err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => break,
-            Err(err) => return Err(TtsError::AudioError(format!("Failed to decode audio packet: {err}"))),
+        offset = offset.saturating_add(consumed);
+
+        let Some(frame) = frame else {
+            continue;
         };
 
-        append_decoded_packet(&mut samples, decoded);
+        if frame.sample_rate == 0 {
+            return Err(TtsError::AudioError("MP3 stream is missing a sample rate".into()));
+        }
+
+        match sample_rate {
+            Some(existing) if existing != frame.sample_rate => {
+                return Err(TtsError::AudioError(format!(
+                    "MP3 stream changed sample rate from {existing} Hz to {} Hz",
+                    frame.sample_rate
+                )));
+            }
+            None => sample_rate = Some(frame.sample_rate),
+            _ => {}
+        }
+
+        append_decoded_mp3_frame(&mut samples, &pcm, frame.samples_produced, frame.channels)?;
+    }
+
+    let sample_rate = sample_rate.ok_or_else(|| {
+        TtsError::AudioError("Unsupported audio stream: expected WAV or MP3 data".into())
+    })?;
+
+    if samples.is_empty() {
+        return Err(TtsError::AudioError(
+            "Unsupported audio stream: expected WAV or MP3 data".into(),
+        ));
     }
 
     Ok(AudioSamples::new(samples, sample_rate))
 }
 
-fn append_decoded_packet(samples: &mut Vec<f32>, decoded: symphonia::core::audio::AudioBufferRef<'_>) {
-    let spec = *decoded.spec();
-    let channels = spec.channels.count();
-    let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
-    buffer.copy_interleaved_ref(decoded);
+fn append_decoded_mp3_frame(
+    samples: &mut Vec<f32>,
+    pcm: &[f32],
+    samples_produced: usize,
+    channels: Mp3Channels,
+) -> Result<(), TtsError> {
+    let channel_count = channels.num() as usize;
+    let total_samples = samples_produced.checked_mul(channel_count).ok_or_else(|| {
+        TtsError::AudioError("MP3 frame sample count overflowed while decoding".into())
+    })?;
+    let frame = pcm.get(..total_samples).ok_or_else(|| {
+        TtsError::AudioError("MP3 decoder returned an invalid frame length".into())
+    })?;
 
-    if channels == 1 {
-        samples.extend_from_slice(buffer.samples());
-        return;
+    if channel_count == 1 {
+        samples.extend_from_slice(frame);
+        return Ok(());
     }
 
-    for frame in buffer.samples().chunks(channels) {
-        samples.push(frame.iter().copied().sum::<f32>() / frame.len() as f32);
+    for frame in frame.chunks_exact(channel_count) {
+        samples.push(frame.iter().copied().sum::<f32>() / channel_count as f32);
     }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -221,28 +229,4 @@ struct WavFormat {
     channels: u16,
     sample_rate: u32,
     bits_per_sample: u16,
-}
-
-struct StreamMediaSource<R>(R);
-
-impl<R: Read + Seek> Read for StreamMediaSource<R> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.0.read(buf)
-    }
-}
-
-impl<R: Read + Seek> Seek for StreamMediaSource<R> {
-    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        self.0.seek(pos)
-    }
-}
-
-impl<R: Read + Seek + Send + Sync> MediaSource for StreamMediaSource<R> {
-    fn is_seekable(&self) -> bool {
-        true
-    }
-
-    fn byte_len(&self) -> Option<u64> {
-        None
-    }
 }

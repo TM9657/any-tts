@@ -6,7 +6,10 @@
 //! Add `metal` on Apple builds or `cuda` on NVIDIA builds to enable faster
 //! backends.
 
-use any_tts::{load_model, DeviceSelection, ModelType, SynthesisRequest, TtsConfig};
+use any_tts::{
+    load_model, AudioSamples, DenoiseOptions, DeviceSelection, ModelType, SynthesisRequest,
+    TtsConfig,
+};
 use serde::Deserialize;
 use std::env;
 use std::fs;
@@ -21,12 +24,73 @@ struct VibeVoiceExampleConfig {
     output: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DenoiseVariant {
+    label: &'static str,
+    options: DenoiseOptions,
+}
+
 fn load_example_config() -> VibeVoiceExampleConfig {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/vibevoice_example.json");
     let content = fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("Failed to read {}: {err}", path.display()));
     serde_json::from_str(&content)
         .unwrap_or_else(|err| panic!("Failed to parse {}: {err}", path.display()))
+}
+
+fn denoise_variants() -> [DenoiseVariant; 2] {
+    [
+        DenoiseVariant {
+            label: "denoised_default",
+            options: DenoiseOptions::default(),
+        },
+        DenoiseVariant {
+            label: "denoised_aggressive",
+            options: DenoiseOptions {
+                noise_reduction: 1.65,
+                residual_floor: 0.05,
+                wet_mix: 1.0,
+                ..DenoiseOptions::default()
+            },
+        },
+    ]
+}
+
+fn denoise_output_dir() -> PathBuf {
+    env::var("VIBEVOICE_DENOISE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("output/denoise"))
+}
+
+fn output_stem(output_path: &Path) -> String {
+    output_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("vibevoice_demo")
+        .to_string()
+}
+
+fn write_denoise_variants(audio: &AudioSamples, output_path: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let denoise_dir = denoise_output_dir();
+    fs::create_dir_all(&denoise_dir)?;
+
+    let stem = output_stem(output_path);
+    let variants = denoise_variants();
+    let mut saved_paths = Vec::with_capacity(1 + variants.len());
+
+    let base_path = denoise_dir.join(format!("{stem}_base.wav"));
+    audio.save_wav(&base_path)?;
+    saved_paths.push(base_path);
+
+    for variant in variants {
+        let cleaned = audio.denoise_speech(variant.options);
+        let variant_path = denoise_dir.join(format!("{stem}_{}.wav", variant.label));
+        cleaned.save_wav(&variant_path)?;
+        saved_paths.push(variant_path);
+    }
+
+    Ok(saved_paths)
 }
 
 fn main() {
@@ -65,6 +129,8 @@ fn main() {
     audio
         .save_wav(Path::new(&output_path))
         .expect("Failed to write WAV");
+    let denoise_paths = write_denoise_variants(&audio, &output_path)
+        .expect("Failed to write denoised WAV variants");
 
     println!(
         "Saved VibeVoice sample to {} ({} samples @ {} Hz)",
@@ -72,4 +138,8 @@ fn main() {
         audio.len(),
         audio.sample_rate
     );
+    println!("Saved VibeVoice denoise variants:");
+    for path in denoise_paths {
+        println!("  {}", path.display());
+    }
 }

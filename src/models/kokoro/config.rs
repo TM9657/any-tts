@@ -256,8 +256,12 @@ impl Default for IstftNetConfig {
 impl KokoroConfig {
     /// Load config from a `config.json` file.
     pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, crate::error::TtsError> {
-        let content = std::fs::read_to_string(path)?;
-        let config: Self = serde_json::from_str(&content)?;
+        Self::from_bytes(std::fs::read(path)?)
+    }
+
+    /// Load config from in-memory `config.json` bytes.
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, crate::error::TtsError> {
+        let config: Self = serde_json::from_slice(bytes.as_ref())?;
         Ok(config)
     }
 

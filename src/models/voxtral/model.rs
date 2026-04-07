@@ -8,7 +8,7 @@ use candle_nn::{Embedding, Linear, Module, VarBuilder};
 use tracing::info;
 
 use crate::audio::AudioSamples;
-use crate::config::{DType as ConfigDType, TtsConfig};
+use crate::config::{DType as ConfigDType, ModelAsset, ModelAssetDir, ModelFiles, TtsConfig};
 use crate::error::TtsError;
 use crate::layers::conv::apply_weight_norm;
 use crate::tensor_utils::{apply_rotary_emb, precompute_rope_freqs, silu, RmsNorm};
@@ -48,17 +48,20 @@ impl TtsModel for VoxtralModel {
         let compute_dtype = select_compute_dtype(config.dtype, &compute_device);
 
         let files = config.resolve_files()?;
-        let model_config =
-            VoxtralConfig::from_file(files.config.as_ref().expect("validated by resolve_files"))?;
-        let tokenizer = VoxtralTokenizer::from_file(
-            files
-                .tokenizer
-                .as_ref()
-                .expect("validated by resolve_files"),
-            &model_config,
-        )?;
+        let config_bytes = files
+            .config
+            .as_ref()
+            .expect("validated by resolve_files")
+            .read_bytes()?;
+        let model_config = VoxtralConfig::from_bytes(config_bytes.as_ref())?;
+        let tokenizer_bytes = files
+            .tokenizer
+            .as_ref()
+            .expect("validated by resolve_files")
+            .read_bytes()?;
+        let tokenizer = VoxtralTokenizer::from_bytes(tokenizer_bytes.as_ref(), &model_config)?;
 
-        let main_vb = load_mmap_var_builder(&files.weights, compute_dtype, &compute_device)?;
+        let main_vb = load_weight_var_builder(&files.weights, compute_dtype, &compute_device)?;
         let lm = MistralLm::load(
             &model_config,
             main_vb.clone(),
@@ -91,7 +94,7 @@ impl TtsModel for VoxtralModel {
             if same_device_kind(&audio_device, &compute_device) && audio_dtype == compute_dtype {
                 main_vb.clone()
             } else {
-                load_mmap_var_builder(&files.weights, audio_dtype, &audio_device)?
+                load_weight_var_builder(&files.weights, audio_dtype, &audio_device)?
             };
         let audio_decoder = VoxtralAudioDecoder::load(
             &model_config.multimodal.audio_tokenizer_args,
@@ -1516,8 +1519,25 @@ fn load_mmap_var_builder(
     Ok(vb)
 }
 
+fn load_weight_var_builder(
+    weights: &[ModelAsset],
+    dtype: DType,
+    device: &Device,
+) -> Result<VarBuilder<'static>, TtsError> {
+    let maybe_paths = weights
+        .iter()
+        .map(|asset| asset.as_path().map(std::path::Path::to_path_buf))
+        .collect::<Option<Vec<_>>>();
+
+    if let Some(paths) = maybe_paths {
+        return load_mmap_var_builder(&paths, dtype, device);
+    }
+
+    ModelFiles::load_safetensors_vb(weights, dtype, device)
+}
+
 fn load_preset_voices(
-    voices_dir: &Path,
+    voices_dir: &ModelAssetDir,
     voice_names: &[String],
     hidden_size: usize,
     device: &Device,
@@ -1525,26 +1545,26 @@ fn load_preset_voices(
 ) -> Result<HashMap<String, Tensor>, TtsError> {
     let mut voices = HashMap::with_capacity(voice_names.len());
     for voice_name in voice_names {
-        let path = voices_dir.join(format!("{voice_name}.pt"));
+        let asset = voices_dir.load_file(&format!("{voice_name}.pt"))?;
         voices.insert(
             voice_name.clone(),
-            load_voice_tensor(&path, hidden_size, device, dtype)?,
+            load_voice_tensor(&asset, hidden_size, device, dtype)?,
         );
     }
     Ok(voices)
 }
 
 fn load_voice_tensor(
-    path: &Path,
+    asset: &ModelAsset,
     hidden_size: usize,
     device: &Device,
     dtype: DType,
 ) -> Result<Tensor, TtsError> {
-    let file = std::fs::File::open(path)?;
-    let mut archive = zip::ZipArchive::new(std::io::BufReader::new(file)).map_err(|err| {
+    let bytes = asset.read_bytes()?;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes.as_ref())).map_err(|err| {
         TtsError::WeightLoadError(format!(
             "Failed to open Voxtral voice embedding '{}': {}",
-            path.display(),
+            asset.display_name(),
             err
         ))
     })?;
@@ -1556,7 +1576,7 @@ fn load_voice_tensor(
         .ok_or_else(|| {
             TtsError::WeightLoadError(format!(
                 "Voice embedding file '{}' is missing data.pkl",
-                path.display()
+                asset.display_name()
             ))
         })?;
     let tensor_root = data_pkl.trim_end_matches("data.pkl");
@@ -1565,13 +1585,13 @@ fn load_voice_tensor(
         let mut entry = archive.by_name(&data_pkl).map_err(|err| {
             TtsError::WeightLoadError(format!(
                 "Failed to read Voxtral voice metadata '{}': {}",
-                path.display(),
+                asset.display_name(),
                 err
             ))
         })?;
         let mut metadata = Vec::new();
         entry.read_to_end(&mut metadata)?;
-        detect_pytorch_storage_dtype(&metadata, path)?
+        detect_pytorch_storage_dtype(&metadata, asset.display_name().as_ref())?
     };
 
     let data_name = format!("{tensor_root}data/0");
@@ -1580,7 +1600,7 @@ fn load_voice_tensor(
         let entry = archive.by_name(&data_name).map_err(|err| {
             TtsError::WeightLoadError(format!(
                 "Voice embedding file '{}' is missing tensor payload '{}': {}",
-                path.display(),
+                asset.display_name(),
                 data_name,
                 err
             ))
@@ -1590,7 +1610,7 @@ fn load_voice_tensor(
         if numel % hidden_size != 0 {
             return Err(TtsError::WeightLoadError(format!(
                 "Voice embedding '{}' has {} values, which is not divisible by hidden size {}",
-                path.display(),
+                asset.display_name(),
                 numel,
                 hidden_size
             )));
@@ -1602,7 +1622,7 @@ fn load_voice_tensor(
         TtsError::WeightLoadError(format!(
             "Failed to reopen Voxtral voice tensor '{}' from '{}': {}",
             data_name,
-            path.display(),
+            asset.display_name(),
             err
         ))
     })?;

@@ -218,20 +218,25 @@ impl TtsModel for OmniVoiceModel {
         }
 
         let files = config.resolve_files()?;
-        let model_config =
-            OmniVoiceConfig::from_file(files.config.as_ref().expect("validated by resolve_files"))?;
-        let tokenizer = TextTokenizer::from_file(
+        let config_bytes = files
+            .config
+            .as_ref()
+            .expect("validated by resolve_files")
+            .read_bytes()?;
+        let model_config = OmniVoiceConfig::from_bytes(config_bytes.as_ref())?;
+        let tokenizer = TextTokenizer::from_asset(
             files
                 .tokenizer
                 .as_ref()
                 .expect("validated by resolve_files"),
         )?;
-        let audio_tokenizer_config = OmniVoiceAudioTokenizerConfig::from_file(
-            files
-                .speech_tokenizer_config
-                .as_ref()
-                .expect("validated by resolve_files"),
-        )?;
+        let audio_tokenizer_config_bytes = files
+            .speech_tokenizer_config
+            .as_ref()
+            .expect("validated by resolve_files")
+            .read_bytes()?;
+        let audio_tokenizer_config =
+            OmniVoiceAudioTokenizerConfig::from_bytes(audio_tokenizer_config_bytes.as_ref())?;
 
         let main_vb =
             ModelFiles::load_safetensors_vb(&files.weights, compute_dtype, &compute_device)?;
@@ -489,7 +494,7 @@ impl TtsModel for OmniVoiceModel {
                 self.files
                     .config
                     .as_ref()
-                    .map(|path| path.display().to_string())
+                    .map(|path| path.display_name())
                     .unwrap_or_else(|| "unresolved".to_string())
             ),
             parameters: 600_000_000,

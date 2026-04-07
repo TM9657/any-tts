@@ -1,25 +1,14 @@
 //! Text-to-phoneme conversion for Kokoro-82M.
 //!
-//! Converts plain text to IPA phoneme strings using espeak-ng (via `espeak-rs`).
-//! Applies Kokoro-specific post-processing to map espeak's IPA output to the
-//! phoneme set that Kokoro was trained on.
-//!
-//! ## Thread safety
-//!
-//! espeak-ng uses global C state and is **not** thread-safe. All calls are
-//! serialised through a [`std::sync::Mutex`].
+//! Converts plain text to Kokoro-compatible IPA phoneme strings using an
+//! in-tree pure-Rust `espeak-rs` compatibility layer.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
-
-use espeak_rs::text_to_phonemes;
 
 use crate::error::{TtsError, TtsResult};
 
-/// Global mutex to serialize espeak-ng calls (espeak uses global state).
-static ESPEAK_MUTEX: Mutex<()> = Mutex::new(());
+use super::espeak_compat::text_to_phonemes;
 
-/// Map Kokoro language codes (ISO 639-1) to espeak-ng voice identifiers.
 fn lang_to_espeak(lang: &str) -> &'static str {
     match lang {
         "en" | "en-us" | "a" => "en-us",
@@ -58,16 +47,11 @@ pub fn language_from_voice(voice: &str) -> &'static str {
     }
 }
 
-/// Apply Kokoro-specific character replacements to espeak IPA output.
-///
-/// espeak-ng produces standard IPA that differs from Kokoro's training phoneme
-/// set. These replacements mirror the Python `misaki` library's mapping.
 fn apply_kokoro_replacements(phonemes: &str) -> String {
     let mut s = phonemes
-        .replace("kəkˈoːɹoʊ", "kˈoʊkəɹoʊ")
-        .replace("kəkˈɔːɹəʊ", "kˈəʊkəɹəʊ")
         .replace('ʲ', "j")
-        .replace('r', "ɹ")
+        .replace('ɝ', "ɚ")
+        .replace('g', "ɡ")
         .replace('x', "k")
         .replace("ɬ", "l");
 
@@ -91,22 +75,17 @@ fn filter_to_vocab(phonemes: &str, vocab: &HashMap<String, u32>) -> String {
 /// Convert plain text to Kokoro-compatible IPA phoneme string.
 ///
 /// Pipeline:
-/// 1. Call espeak-ng to get IPA phonemes for the given language
-/// 2. Apply Kokoro-specific character replacements
+/// 1. Use the pure-Rust `espeak-rs` compatibility layer for the requested language
+/// 2. Apply Kokoro-specific cleanup
 /// 3. Filter to only characters in the Kokoro vocab
 pub fn phonemize(text: &str, language: &str, vocab: &HashMap<String, u32>) -> TtsResult<String> {
     let espeak_lang = lang_to_espeak(language);
 
-    let raw_phonemes = {
-        let _guard = ESPEAK_MUTEX
-            .lock()
-            .map_err(|e| TtsError::ModelError(format!("espeak mutex poisoned: {e}")))?;
-        text_to_phonemes(text, espeak_lang, None, true, false).map_err(|e| {
-            TtsError::ModelError(format!(
-                "espeak-ng phonemization failed for lang '{language}' (espeak voice '{espeak_lang}'): {e}"
-            ))
-        })?
-    };
+    let raw_phonemes = text_to_phonemes(text, espeak_lang, None, true, false).map_err(|e| {
+        TtsError::ModelError(format!(
+            "pure-Rust phonemization failed for lang '{language}' (compat voice '{espeak_lang}'): {e}"
+        ))
+    })?;
 
     let joined = raw_phonemes.join("");
     let replaced = apply_kokoro_replacements(&joined);
@@ -150,9 +129,9 @@ mod tests {
 
     #[test]
     fn test_kokoro_replacements() {
-        let input = "ʲrxɬ";
+        let input = "ʲrgxɬɝ";
         let output = apply_kokoro_replacements(input);
-        assert_eq!(output, "jɹkl");
+        assert_eq!(output, "jrɡklɚ");
     }
 
     #[test]
@@ -170,12 +149,35 @@ mod tests {
     }
 
     #[test]
-    fn test_phonemize_german() {
+    fn test_phonemize_british_english_variant() {
         let vocab = dummy_vocab();
-        let result = phonemize("Guten Tag", "de", &vocab);
-        assert!(result.is_ok(), "phonemize failed: {:?}", result.err());
-        let ph = result.unwrap();
-        assert!(!ph.is_empty());
+        let us = phonemize("schedule", "en", &vocab).expect("US phonemization should work");
+        let gb = phonemize("schedule", "en-gb", &vocab)
+            .expect("British phonemization should work");
+
+        assert!(!us.is_empty());
+        assert!(!gb.is_empty());
+        assert_ne!(us, gb, "expected dialect-specific phoneme output");
+    }
+
+    #[test]
+    fn test_phonemize_multilingual_smoke() {
+        let vocab = dummy_vocab();
+        for (text, lang) in [
+            ("Hola mundo", "es"),
+            ("Bonjour le monde", "fr"),
+            ("Guten Tag", "de"),
+            ("Ciao mondo", "it"),
+            ("Olá mundo", "pt"),
+            ("こんにちは世界", "ja"),
+            ("你好世界", "zh"),
+            ("안녕하세요", "ko"),
+            ("नमस्ते दुनिया", "hi"),
+        ] {
+            let result = phonemize(text, lang, &vocab);
+            assert!(result.is_ok(), "phonemize failed for {lang}: {:?}", result.err());
+            assert!(!result.unwrap().is_empty(), "expected non-empty phonemes for {lang}");
+        }
     }
 
     #[test]

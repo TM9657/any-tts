@@ -17,24 +17,26 @@
 
 The Flow-Like icon above is intentionally in use here at the top of this README.
 
-any-tts is a Rust text-to-speech library built around Candle with one trait-based API for multiple open-weight model families. You can point it at local files, hand it explicit paths from your own cache, or let it resolve missing assets from Hugging Face and keep the synthesis call site unchanged.
+any-tts is a Rust text-to-speech library built around Candle with one trait-based API for multiple open-weight model families. You can point it at local files, hand it explicit paths from your own cache, feed it named in-memory byte assets from an object store, or let it resolve missing assets from Hugging Face and keep the synthesis call site unchanged.
 
 If you want one Rust TTS surface for small local models, multilingual research checkpoints, and agent-oriented voice stacks without rewriting your application around each model family, this is the repo.
+
+For Flow-like specifically: every public backend can now load from relative-path byte assets, so `object_store` reads can go straight into `TtsConfig` without writing temp files first.
 
 ## Why this repo exists
 
 - One API for Kokoro, OmniVoice, Qwen3-TTS, VibeVoice, and Voxtral.
 - Native Rust backends across the public model surface.
-- Local path loading, per-file wiring, or Hugging Face fallback.
+- Local path loading, in-memory byte bundles, per-file wiring, or Hugging Face fallback.
 - CPU first, GPU when available: CUDA, Metal, and Accelerate build targets.
 - Request-level control for `language`, `voice`, `instruct`, `max_tokens`, `temperature`, and `cfg_scale`.
-- WAV output everywhere and optional MP3 export through the `mp3` feature.
+- WAV output everywhere, with built-in WAV and MP3 input decoding for cleanup and reference-audio workflows.
 
 ## Public model support
 
 | Model | Status in any-tts | Default upstream | Best at | Main tradeoff | Model license |
 | --- | --- | --- | --- | --- | --- |
-| Kokoro-82M | Public, native, lightweight | `hexgrad/Kokoro-82M` | Fast local TTS with small weights | Requires espeak-based phonemization; default open release is mostly preset voices | Apache-2.0 |
+| Kokoro-82M | Public, native, lightweight | `hexgrad/Kokoro-82M` | Fast local TTS with small weights | Uses an in-tree pure-Rust phonemizer compatible with Kokoro's current public language set; parity tuning is still ongoing | Apache-2.0 |
 | OmniVoice | Public, native | `k2-fsa/OmniVoice` | Huge language coverage and instruct-driven voice design | The current Rust backend does not yet expose upstream zero-shot cloning | Apache-2.0 |
 | Qwen3-TTS-12Hz-1.7B | Public, native | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` | Strong multilingual control, named speakers, and instruct handling | Heavy weights and extra speech-tokenizer assets | Apache-2.0 |
 | VibeVoice-1.5B | Public, native | `microsoft/VibeVoice-1.5B` | Long-form multi-speaker speech diffusion with native Rust inference | Still early and currently optimized for single-request parity work rather than streaming performance | MIT |
@@ -52,20 +54,20 @@ That split matters. The README below treats Kokoro, OmniVoice, Qwen3-TTS, VibeVo
 
 ## Installation
 
-For CPU-only builds, a recent stable Rust toolchain is enough. For GPU builds, compile the feature set that matches your machine. For Kokoro, install an espeak-ng compatible phonemizer on the host because the backend uses `espeak-rs` to turn text into IPA before synthesis.
+For CPU-only builds, a recent stable Rust toolchain is enough. For GPU builds, compile the feature set that matches your machine. Kokoro no longer requires a system `espeak-ng` install: the repo now ships an in-tree pure-Rust phonemizer with an `espeak-rs`-compatible interface for the language set exposed by the current Kokoro backend.
 
-Add the crate from git:
+Add the crate from crates.io:
 
 ```toml
 [dependencies]
-any-tts = { git = "https://github.com/TM9657/any-tts" }
+any-tts = "0.1"
 ```
 
 Or opt into a smaller feature set:
 
 ```toml
 [dependencies]
-any-tts = { git = "https://github.com/TM9657/any-tts", default-features = false, features = ["kokoro", "download", "metal"] }
+any-tts = { version = "0.1", default-features = false, features = ["kokoro", "download", "metal"] }
 ```
 
 ### Feature flags
@@ -79,16 +81,17 @@ By default the crate enables `qwen3-tts`, `kokoro`, `omnivoice`, `vibevoice`, `v
 | `qwen3-tts` | Enables the Qwen3-TTS backend. |
 | `vibevoice` | Enables the native VibeVoice backend. |
 | `voxtral` | Enables the native Voxtral backend. |
-| `download` | Allows missing model files to be pulled from Hugging Face Hub. |
+| `download` | Allows missing model files to be pulled from Hugging Face Hub through the crate's built-in downloader. |
 | `cuda` | Builds Candle with CUDA support. |
 | `metal` | Builds Candle with Metal support for Apple GPUs. |
 | `accelerate` | Enables Apple Accelerate support for CPU-heavy Apple builds. |
-| `mp3` | Enables MP3 export through `mp3lame-encoder`. |
 
 ### Backend selection
 
 - `DeviceSelection::Auto` tries CUDA first, then Metal, then CPU.
 - `DeviceSelection::Cpu`, `DeviceSelection::Cuda(0)`, and `DeviceSelection::Metal(0)` let you force the runtime target.
+- `preferred_runtime_choice(ModelType::...)` returns the fastest safe device and dtype for the current machine.
+- `TtsConfig::with_preferred_runtime()` applies that runtime choice in one builder call.
 - `DType` can be set to `F32`, `F16`, or `BF16`.
 - On CPU, models that cannot safely run BF16 fall back to `F32`.
 - The native OmniVoice helper prefers `cuda:0 (bf16)`, then `metal:0 (f32)`, then `cpu (f32)`.
@@ -116,7 +119,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## File resolution flow
+## Byte-first loading
+
+If your runtime already has model artifacts in memory, use `ModelAssetBundle` or the `with_*_bytes()` builders instead of writing them to disk first.
+
+```rust,no_run
+use any_tts::{load_model, ModelAssetBundle, ModelType, SynthesisRequest, TtsConfig};
+
+fn read_object(_key: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+  Ok(Vec::new())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+  let assets = ModelAssetBundle::new()
+    .with_bytes("config.json", read_object("config.json")?)
+    .with_bytes("tokenizer.json", read_object("tokenizer.json")?)
+    .with_bytes("model.safetensors", read_object("model.safetensors")?)
+    .with_bytes(
+      "speech_tokenizer/model.safetensors",
+      read_object("speech_tokenizer/model.safetensors")?,
+    );
+
+  let model = load_model(
+    TtsConfig::new(ModelType::Qwen3Tts)
+      .with_asset_bundle(assets)
+  )?;
+
+  let audio = model.synthesize(&SynthesisRequest::new("Hello from byte-backed assets."))?;
+  let wav_bytes = audio.get_wav();
+  let _ = wav_bytes;
+  Ok(())
+}
+```
+
+The relative paths in the asset bundle should match the model layout documented below, for example `config.json`, `audio_tokenizer/model.safetensors`, or `voice_embedding/Aurora.pt`.
+
+## Audio bytes
+
+Generated audio already comes back as `AudioSamples`, so output does not need filesystem paths either.
+
+- `audio.get_wav()` returns a complete WAV file as `Vec<u8>` for every backend.
+- `audio.save_wav()` is a convenience helper on top of the same byte encoder.
 
 ## Audio cleanup
 
@@ -143,13 +186,28 @@ source-separation model.
 
 ## File resolution flow
 
-any-tts resolves model assets in three tiers, in this order:
+any-tts resolves model assets in four tiers, in this order:
 
 1. Explicit files you set on `TtsConfig` with methods like `with_config_file()` or `with_weight_file()`.
-2. Auto-discovery from `with_model_path()` using the expected filenames for that backend.
-3. Hugging Face fallback through the `download` feature.
+2. Auto-discovery from `with_asset_bundle()` or `with_asset_bytes()` using model-relative paths.
+3. Auto-discovery from `with_model_path()` using the expected filenames for that backend.
+4. Hugging Face fallback through the `download` feature.
 
 That means you can mix strategies. A service with its own artifact cache can hand over a few exact files and let the crate discover or download the rest.
+
+## Model asset layouts
+
+You can inspect the documented manifest programmatically through `ModelType::asset_requirements()`. The expected relative paths are:
+
+| Model | Required asset patterns | Optional asset patterns |
+| --- | --- | --- |
+| Kokoro | `config.json`, `model.safetensors` or `*.pth` | `voices/*.pt` |
+| OmniVoice | `config.json`, `tokenizer.json`, `model.safetensors` or `model-*-of-*.safetensors`, `audio_tokenizer/config.json`, `audio_tokenizer/model.safetensors` or `audio_tokenizer/model-*-of-*.safetensors` | `generation_config.json` |
+| Qwen3-TTS | `config.json`, `tokenizer.json`, `model.safetensors` or `model-*-of-*.safetensors`, `speech_tokenizer/model.safetensors` or `speech_tokenizer/model-*-of-*.safetensors` | `speech_tokenizer/config.json`, `generation_config.json` |
+| VibeVoice | `config.json`, `tokenizer.json`, `model.safetensors` or `model-*-of-*.safetensors` | `preprocessor_config.json`, `generation_config.json` |
+| Voxtral | `params.json`, `tekken.json`, `consolidated.safetensors`, `voice_embedding/*.pt` | none |
+
+Using these exact relative paths makes the byte-based API foolproof because the same names are what `with_model_path()` auto-discovery expects on disk.
 
 ## Request controls
 
@@ -183,6 +241,12 @@ cargo run --example benchmark_omnivoice --release --no-default-features --featur
 
 Outputs are written under `output/` by the example binaries.
 
+`generate_vibevoice` keeps writing the main raw render to the configured
+`VIBEVOICE_OUTPUT` path and also writes `*_base.wav`,
+`*_denoised_default.wav`, and `*_denoised_aggressive.wav` under
+`output/denoise/` by default. You can override that folder with
+`VIBEVOICE_DENOISE_DIR`.
+
 `generate_comparison_suite` writes a shared English and German comparison set under `output/model_comparison/cpu/` and `output/model_comparison/metal/`, plus `report.json` files with per-model load time, per-sample synthesis time, audio duration, and realtime factor. It loads one model at a time so the full suite can run sequentially on tighter memory budgets.
 
 Note on KugelAudio: there is an in-tree `generate_kugelaudio` example, but it currently targets a non-exported `ModelType` variant and should be treated as experimental repo work rather than public API.
@@ -212,7 +276,7 @@ Kokoro is the compact option in this repo: an 82M-parameter StyleTTS2 plus ISTFT
 
 **Cons**
 
-- Depends on espeak-based phonemization, so system setup matters.
+- Uses a pure-Rust phonemizer for English input, so deployment is simpler than the previous espeak-based setup.
 - The common open release is mostly about preset voice packs, not raw zero-shot cloning.
 - Less expressive control than the bigger instruct-heavy model families.
 

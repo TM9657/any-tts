@@ -42,8 +42,9 @@ pub(super) fn resolve_runtime_dtype(device: &Device, requested: DType) -> DType 
 pub(super) fn load_preprocessor_config(
     files: &ModelFiles,
 ) -> Result<VibeVoicePreprocessorConfig, TtsError> {
-    if let Some(path) = &files.preprocessor_config {
-        return VibeVoicePreprocessorConfig::from_file(path);
+    if let Some(asset) = &files.preprocessor_config {
+        let bytes = asset.read_bytes()?;
+        return VibeVoicePreprocessorConfig::from_bytes(bytes.as_ref());
     }
     Ok(VibeVoicePreprocessorConfig::default())
 }
@@ -52,7 +53,7 @@ pub(super) fn build_processor(
     files: &ModelFiles,
     preprocessor_config: &VibeVoicePreprocessorConfig,
 ) -> Result<VibeVoiceProcessor, TtsError> {
-    let tokenizer = TextTokenizer::from_file(
+    let tokenizer = TextTokenizer::from_asset(
         files.tokenizer.as_ref().expect("validated by resolve_files"),
     )?;
     let tokenizer_spec = VibeVoiceTokenizerSpec::from_tokenizer(&tokenizer)?;

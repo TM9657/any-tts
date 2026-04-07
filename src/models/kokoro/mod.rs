@@ -9,6 +9,8 @@
 pub mod albert;
 pub mod config;
 pub mod decoder;
+mod english_g2p;
+pub mod espeak_compat;
 pub mod model;
 pub mod phonemizer;
 pub mod prosody;

@@ -66,7 +66,7 @@ impl AudioSamples {
     /// Decode a WAV or MP3 stream into mono PCM samples.
     ///
     /// The input format is auto-detected. WAV is decoded directly and MP3 is
-    /// decoded through Symphonia.
+    /// decoded with the built-in MP3 decoder.
     pub fn from_audio_stream<R>(stream: R) -> Result<Self, crate::TtsError>
     where
         R: Read + Seek + Send + Sync + 'static,
@@ -177,111 +177,16 @@ impl AudioSamples {
         std::fs::write(path, self.get_wav())
     }
 
-    // -----------------------------------------------------------------------
-    // MP3  (requires the `mp3` feature)
-    // -----------------------------------------------------------------------
-
-    /// Encode the audio as MP3 and return the raw bytes.
-    ///
-    /// Uses the LAME encoder under the hood (quality VBR ~160 kbps).
-    /// Requires the **`mp3`** Cargo feature:
-    ///
-    /// ```toml
-    /// any-tts = { version = "0.1", features = ["mp3"] }
-    /// ```
-    #[cfg(feature = "mp3")]
-    pub fn get_mp3(&self) -> Result<Vec<u8>, crate::TtsError> {
-        use mp3lame_encoder::{FlushNoGap, InterleavedPcm, MonoPcm};
-
-        let mut encoder = Self::build_lame_encoder(self.channels, self.sample_rate)?;
-        let pcm_i16 = self.to_i16();
-
-        // Encode PCM → MP3
-        let max_mp3_size = (1.25 * pcm_i16.len() as f64 + 7200.0) as usize;
-        let mut mp3_buf = Self::uninit_buf(max_mp3_size);
-
-        let encoded = if self.channels == 1 {
-            encoder.encode(MonoPcm(&pcm_i16), &mut mp3_buf)
-        } else {
-            encoder.encode(InterleavedPcm(&pcm_i16), &mut mp3_buf)
-        }
-        .map_err(|e| crate::TtsError::AudioError(format!("LAME encode: {e:?}")))?;
-
-        // Flush remaining frames
-        let mut flush_buf = Self::uninit_buf(7200);
-        let flushed = encoder
-            .flush::<FlushNoGap>(&mut flush_buf)
-            .map_err(|e| crate::TtsError::AudioError(format!("LAME flush: {e:?}")))?;
-
-        // Collect initialised bytes into a single Vec
-        let mut out = Vec::with_capacity(encoded + flushed);
-        out.extend_from_slice(Self::assume_init_slice(&mp3_buf[..encoded]));
-        out.extend_from_slice(Self::assume_init_slice(&flush_buf[..flushed]));
-        Ok(out)
-    }
-
-    /// Create a LAME MP3 encoder with the given channel count and sample rate.
-    #[cfg(feature = "mp3")]
-    fn build_lame_encoder(
-        channels: u16,
-        sample_rate: u32,
-    ) -> Result<mp3lame_encoder::Encoder, crate::TtsError> {
-        let mut lame = mp3lame_encoder::Builder::new().ok_or_else(|| {
-            crate::TtsError::AudioError("Failed to initialise LAME encoder".into())
-        })?;
-        lame.set_num_channels(channels as u8)
-            .map_err(|e| crate::TtsError::AudioError(format!("LAME channels: {e:?}")))?;
-        lame.set_sample_rate(sample_rate)
-            .map_err(|e| crate::TtsError::AudioError(format!("LAME sample rate: {e:?}")))?;
-        lame.set_quality(mp3lame_encoder::Quality::Best)
-            .map_err(|e| crate::TtsError::AudioError(format!("LAME quality: {e:?}")))?;
-        lame.build()
-            .map_err(|e| crate::TtsError::AudioError(format!("LAME build: {e:?}")))
-    }
-
-    /// Allocate an uninitialised byte buffer for LAME output.
-    #[cfg(feature = "mp3")]
-    fn uninit_buf(len: usize) -> Vec<std::mem::MaybeUninit<u8>> {
-        vec![std::mem::MaybeUninit::uninit(); len]
-    }
-
-    /// Reinterpret a `&[MaybeUninit<u8>]` slice as `&[u8]`.
-    ///
-    /// # Safety guarantee
-    ///
-    /// This is only called on sub-slices that the LAME encoder has fully
-    /// written to (the encoder returns the exact number of initialised
-    /// bytes). `MaybeUninit<u8>` has the same size and alignment as `u8`,
-    /// so the pointer cast is layout-compatible.
-    #[cfg(feature = "mp3")]
-    fn assume_init_slice(buf: &[std::mem::MaybeUninit<u8>]) -> &[u8] {
-        // SAFETY: LAME guarantees the first `buf.len()` bytes are initialised.
-        // MaybeUninit<u8> and u8 have identical layout (size 1, align 1).
-        unsafe { &*(buf as *const [std::mem::MaybeUninit<u8>] as *const [u8]) }
-    }
-
-    /// Save the audio as an MP3 file.
-    ///
-    /// Requires the **`mp3`** Cargo feature.
-    #[cfg(feature = "mp3")]
-    pub fn save_mp3(&self, path: impl AsRef<std::path::Path>) -> Result<(), crate::TtsError> {
-        let path = path.as_ref();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| crate::TtsError::AudioError(format!("mkdir: {e}")))?;
-        }
-        let bytes = self.get_mp3()?;
-        std::fs::write(path, bytes)
-            .map_err(|e| crate::TtsError::AudioError(format!("write: {e}")))?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
     use std::f32::consts::PI;
     use std::io::Cursor;
+
+    const MP3_FIXTURE_BASE64: &str = "SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAwAAAAAAAAAAAAAAD/86TEAAWgBuJhQQABkQMiLzhh4efgHh55+AAAGe2Hh5//gIUXgBEZiAUDAUCAQBgSX26mpsGnjrCGMjzZfQYxMiAUGUJo1P2AU0EJBOfw5QWoJ8O3/EZC6juGGGG/8xLpImReL34lCQNN/KhIGgsCytAADosjVUE6KILUMMPJqgsA7cE8gj4UH7g5CxDs06FQV0J0jeIMIP3a+DMVJWtq2CCJ0AAOX8IbfFCA0OI7z4wAwAsGoGkFgIBAAAbZsDnojFGdFf5b8hEmQjmET/5fiiAS0Liv8CAXkcbcaSq/5aFvVafhTsOf/53jm8iAqSPZAPA/+TSQTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zTE/BKA8rr5mmkAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8yTE7QSAPuMBzQAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8xTE/gKwPt6AAFgFVVVVVVVVVVVVVVX/8xTE/gKoQtqAA1gIVVVVVVVVVVVVVVX/8xTE/gJQQuaAApgIVVVVVVVVVVVVVVX/8xTE/wP4OuMBSwABVVVVVVVVVVVVVVX/8zTE+hHAsssZmnkAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8xTE7gAAA0gBwAAAVVVVVVVVVVVVVVU=";
 
     #[test]
     fn test_duration_calculation() {
@@ -399,13 +304,14 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mp3")]
     #[test]
     fn test_from_audio_stream_decodes_mp3() {
-        let original = AudioSamples::new(synthetic_voice_like_signal(24_000, 1.0), 24_000);
-        let decoded = AudioSamples::from_audio_stream(Cursor::new(original.get_mp3().unwrap())).unwrap();
+        let mp3 = base64::engine::general_purpose::STANDARD
+            .decode(MP3_FIXTURE_BASE64)
+            .unwrap();
+        let decoded = AudioSamples::from_audio_stream(Cursor::new(mp3)).unwrap();
 
-        assert_eq!(decoded.sample_rate, original.sample_rate);
+        assert_eq!(decoded.sample_rate, 24_000);
         assert!(!decoded.samples.is_empty());
         assert!(decoded.samples.iter().any(|sample| sample.abs() > 1e-3));
     }
