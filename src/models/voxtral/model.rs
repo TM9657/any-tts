@@ -1505,34 +1505,11 @@ fn permute_mistral_rope_weight(
         .contiguous()?)
 }
 
-fn load_mmap_var_builder(
-    paths: &[std::path::PathBuf],
-    dtype: DType,
-    device: &Device,
-) -> Result<VarBuilder<'static>, TtsError> {
-    if paths.is_empty() {
-        return Err(TtsError::FileMissing(
-            "consolidated.safetensors".to_string(),
-        ));
-    }
-    let vb = unsafe { VarBuilder::from_mmaped_safetensors(paths, dtype, device)? };
-    Ok(vb)
-}
-
 fn load_weight_var_builder(
     weights: &[ModelAsset],
     dtype: DType,
     device: &Device,
 ) -> Result<VarBuilder<'static>, TtsError> {
-    let maybe_paths = weights
-        .iter()
-        .map(|asset| asset.as_path().map(std::path::Path::to_path_buf))
-        .collect::<Option<Vec<_>>>();
-
-    if let Some(paths) = maybe_paths {
-        return load_mmap_var_builder(&paths, dtype, device);
-    }
-
     ModelFiles::load_safetensors_vb(weights, dtype, device)
 }
 
