@@ -19,6 +19,35 @@ use crate::tensor_utils::{precompute_rope_freqs, RmsNorm};
 
 use super::config::TalkerConfig;
 
+pub type TalkerPredictAndSumFn<'a> =
+    dyn FnMut(&Tensor, u32, &Tensor, &Device) -> Result<(Tensor, Vec<u32>)> + 'a;
+
+pub struct TalkerGenerationConfig<'a> {
+    max_tokens: usize,
+    temperature: f64,
+    top_k: usize,
+    predict_and_sum_fn: Option<&'a mut TalkerPredictAndSumFn<'a>>,
+}
+
+impl<'a> TalkerGenerationConfig<'a> {
+    pub fn new(max_tokens: usize, temperature: f64, top_k: usize) -> Self {
+        Self {
+            max_tokens,
+            temperature,
+            top_k,
+            predict_and_sum_fn: None,
+        }
+    }
+
+    pub fn with_predict_and_sum_fn(
+        mut self,
+        predict_and_sum_fn: &'a mut TalkerPredictAndSumFn<'a>,
+    ) -> Self {
+        self.predict_and_sum_fn = Some(predict_and_sum_fn);
+        self
+    }
+}
+
 /// The Talker language model.
 pub struct TalkerLm {
     /// Text token embedding (text_vocab_size × text_hidden_size).
@@ -220,8 +249,8 @@ impl TalkerLm {
     /// 3. Return the hidden state and token so the caller can run the Code Predictor
     /// 4. Caller computes summed embedding for the next step
     ///
-    /// This method handles the full loop. The Code Predictor callback is provided
-    /// by the caller via `predict_groups_fn`.
+    /// This method handles the full loop. Optional code-predictor feedback is
+    /// passed through [`TalkerGenerationConfig`].
     ///
     /// Returns `(generated_g0_tokens, per_step_group_tokens)`.
     /// `per_step_group_tokens[i]` contains the predicted tokens for groups 1..N-1
@@ -230,21 +259,13 @@ impl TalkerLm {
         &mut self,
         text_embeds: &Tensor,
         trailing_text_hidden: &Tensor,
-        _speaker_id: Option<u32>,
-        _language_id: Option<u32>,
-        max_tokens: usize,
-        temperature: f64,
-        top_k: usize,
-        device: &Device,
-        // Callback: given (past_hidden, group0_token, group0_embed, device) -> (summed_codec_embed, group_tokens)
-        // The callback runs the code predictor to predict groups 1-15, embeds them,
-        // and returns the sum of all 16 group embeddings plus the predicted token IDs.
-        // If None, falls back to group-0-only embedding (no code predictor).
-        mut predict_and_sum_fn: Option<
-            &mut dyn FnMut(&Tensor, u32, &Tensor, &Device) -> Result<(Tensor, Vec<u32>)>,
-        >,
+        mut generation: TalkerGenerationConfig<'_>,
     ) -> Result<(Vec<u32>, Vec<Vec<u32>>)> {
         let _batch = text_embeds.dims()[0];
+        let device = text_embeds.device();
+        let max_tokens = generation.max_tokens;
+        let temperature = generation.temperature;
+        let top_k = generation.top_k;
 
         // Clear KV cache from any previous generation
         self.clear_cache();
@@ -282,9 +303,9 @@ impl TalkerLm {
         if suppress_start < self.config.vocab_size {
             let logits_vec: Vec<f32> = first_logits.flatten_all()?.to_vec1()?;
             let mut masked = logits_vec;
-            for i in suppress_start..self.config.vocab_size {
-                if i as u32 != self.config.codec_eos_token_id {
-                    masked[i] = f32::NEG_INFINITY;
+            for (index, value) in masked.iter_mut().enumerate().skip(suppress_start) {
+                if index as u32 != self.config.codec_eos_token_id {
+                    *value = f32::NEG_INFINITY;
                 }
             }
             first_logits = Tensor::from_vec(masked, first_logits.shape(), device)?;
@@ -320,13 +341,13 @@ impl TalkerLm {
         let g0_token_tensor = Tensor::new(&[first_token], device)?.unsqueeze(0)?;
         let g0_embed = self.embed_codec(&g0_token_tensor)?;
 
-        let (summed_embed, step_group_tokens) = if let Some(ref mut predict_fn) = predict_and_sum_fn
-        {
-            // Reference: past_hidden = hidden_states[:, -1:, :] where hidden_states = outputs.last_hidden_state (POST-NORM)
-            predict_fn(&last_hidden, first_token, &g0_embed, device)?
-        } else {
-            (g0_embed, vec![])
-        };
+        let (summed_embed, step_group_tokens) =
+            if let Some(ref mut predict_fn) = generation.predict_and_sum_fn {
+                // Reference: past_hidden = hidden_states[:, -1:, :] where hidden_states = outputs.last_hidden_state (POST-NORM)
+                predict_fn(&last_hidden, first_token, &g0_embed, device)?
+            } else {
+                (g0_embed, vec![])
+            };
         all_group_tokens.push(step_group_tokens);
 
         // Add trailing text hidden for text alignment.
@@ -372,9 +393,9 @@ impl TalkerLm {
             if suppress_start < self.config.vocab_size {
                 let logits_vec: Vec<f32> = logits.flatten_all()?.to_vec1()?;
                 let mut masked = logits_vec;
-                for i in suppress_start..self.config.vocab_size {
-                    if i as u32 != self.config.codec_eos_token_id {
-                        masked[i] = f32::NEG_INFINITY;
+                for (index, value) in masked.iter_mut().enumerate().skip(suppress_start) {
+                    if index as u32 != self.config.codec_eos_token_id {
+                        *value = f32::NEG_INFINITY;
                     }
                 }
                 logits = Tensor::from_vec(masked, logits.shape(), device)?;
@@ -413,7 +434,7 @@ impl TalkerLm {
             let g0_embed = self.embed_codec(&g0_token_tensor)?;
 
             let (summed_embed, step_group_tokens) =
-                if let Some(ref mut predict_fn) = predict_and_sum_fn {
+                if let Some(ref mut predict_fn) = generation.predict_and_sum_fn {
                     // past_hidden is the POST-NORM last hidden state from the transformer
                     // (matching reference: past_hidden = hidden_states[:, -1:, :] where
                     //  hidden_states = outputs.last_hidden_state, which is after final RMS norm)

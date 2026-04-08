@@ -17,7 +17,7 @@ fn main() {
         use any_tts::tokenizer::TextTokenizer;
         let files = model.files();
         let tok_path = files.tokenizer.as_ref().unwrap();
-        let tok = TextTokenizer::from_file(tok_path).unwrap();
+        let tok = TextTokenizer::from_asset(tok_path).unwrap();
 
         let template = "<|im_start|>assistant\nHello.<|im_end|>\n<|im_start|>assistant\n";
         let ids = tok.encode(template).unwrap();

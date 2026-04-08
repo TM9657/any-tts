@@ -303,6 +303,39 @@ mod tests {
     }
 
     #[test]
+    fn test_denoise_speech_reduces_quiet_region_noise_floor() {
+        let sample_rate = 16_000;
+        let quiet_prefix_len = sample_rate as usize / 2;
+        let mut clean = vec![0.0; quiet_prefix_len];
+        clean.extend(synthetic_voice_like_signal(sample_rate, 1.5));
+
+        let noisy = mix_background_music(&clean, sample_rate);
+        let baseline =
+            AudioSamples::new(noisy.clone(), sample_rate).denoise_speech(DenoiseOptions {
+                noise_reduction: 0.0,
+                residual_floor: 1.0,
+                wet_mix: 1.0,
+                ..DenoiseOptions::default()
+            });
+        let cleaned =
+            AudioSamples::new(noisy, sample_rate).denoise_speech(DenoiseOptions::default());
+
+        let baseline_quiet_rms = rms(&baseline.samples[..quiet_prefix_len]);
+        let cleaned_quiet_rms = rms(&cleaned.samples[..quiet_prefix_len]);
+        let baseline_speech_rms = rms(&baseline.samples[quiet_prefix_len..]);
+        let cleaned_speech_rms = rms(&cleaned.samples[quiet_prefix_len..]);
+
+        assert!(
+            cleaned_quiet_rms < baseline_quiet_rms * 0.7,
+            "Expected denoiser to lower the quiet-region RMS, before={baseline_quiet_rms:.4} after={cleaned_quiet_rms:.4}"
+        );
+        assert!(
+            cleaned_speech_rms > baseline_speech_rms * 0.45,
+            "Expected denoiser to preserve speech energy, before={baseline_speech_rms:.4} after={cleaned_speech_rms:.4}"
+        );
+    }
+
+    #[test]
     fn test_from_audio_stream_decodes_mp3() {
         let mp3 = base64::engine::general_purpose::STANDARD
             .decode(MP3_FIXTURE_BASE64)
@@ -361,5 +394,12 @@ mod tests {
             / reference.len() as f32;
 
         10.0 * (signal_power / noise_power.max(1e-9)).log10()
+    }
+    fn rms(samples: &[f32]) -> f32 {
+        if samples.is_empty() {
+            return 0.0;
+        }
+
+        (samples.iter().map(|sample| sample * sample).sum::<f32>() / samples.len() as f32).sqrt()
     }
 }

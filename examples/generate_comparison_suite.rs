@@ -310,49 +310,43 @@ fn runtime_plans(filter: RuntimeFilter) -> Vec<RuntimePlan> {
 }
 
 fn available_model_plans() -> Vec<ModelPlan> {
-    let mut plans = Vec::new();
-
-    #[cfg(feature = "kokoro")]
-    plans.push(ModelPlan {
-        key: "kokoro",
-        label: "Kokoro-82M",
-        model_type: ModelType::Kokoro,
-        model_path: Some("./models/Kokoro-82M"),
-    });
-
-    #[cfg(feature = "omnivoice")]
-    plans.push(ModelPlan {
-        key: "omnivoice",
-        label: "OmniVoice",
-        model_type: ModelType::OmniVoice,
-        model_path: None,
-    });
-
-    #[cfg(feature = "qwen3-tts")]
-    plans.push(ModelPlan {
-        key: "qwen3_tts",
-        label: "Qwen3-TTS-12Hz-1.7B-CustomVoice",
-        model_type: ModelType::Qwen3Tts,
-        model_path: None,
-    });
-
-    #[cfg(feature = "vibevoice")]
-    plans.push(ModelPlan {
-        key: "vibevoice",
-        label: "VibeVoice-1.5B",
-        model_type: ModelType::VibeVoice,
-        model_path: None,
-    });
-
-    #[cfg(feature = "voxtral")]
-    plans.push(ModelPlan {
-        key: "voxtral",
-        label: "Voxtral-4B-TTS-2603",
-        model_type: ModelType::Voxtral,
-        model_path: None,
-    });
-
-    plans
+    vec![
+        #[cfg(feature = "kokoro")]
+        ModelPlan {
+            key: "kokoro",
+            label: "Kokoro-82M",
+            model_type: ModelType::Kokoro,
+            model_path: Some("./models/Kokoro-82M"),
+        },
+        #[cfg(feature = "omnivoice")]
+        ModelPlan {
+            key: "omnivoice",
+            label: "OmniVoice",
+            model_type: ModelType::OmniVoice,
+            model_path: None,
+        },
+        #[cfg(feature = "qwen3-tts")]
+        ModelPlan {
+            key: "qwen3_tts",
+            label: "Qwen3-TTS-12Hz-1.7B-CustomVoice",
+            model_type: ModelType::Qwen3Tts,
+            model_path: None,
+        },
+        #[cfg(feature = "vibevoice")]
+        ModelPlan {
+            key: "vibevoice",
+            label: "VibeVoice-1.5B",
+            model_type: ModelType::VibeVoice,
+            model_path: None,
+        },
+        #[cfg(feature = "voxtral")]
+        ModelPlan {
+            key: "voxtral",
+            label: "Voxtral-4B-TTS-2603",
+            model_type: ModelType::Voxtral,
+            model_path: None,
+        },
+    ]
 }
 
 fn filter_model_plans(
@@ -570,6 +564,7 @@ fn select_voice(model_type: ModelType, supported_voices: &[String]) -> Option<St
         ModelType::Kokoro => &["af_heart"][..],
         ModelType::Qwen3Tts => &["dylan"][..],
         ModelType::Voxtral => &["neutral_male"][..],
+        ModelType::VibeVoiceRealtime => &["en-Emma_woman"][..],
         ModelType::OmniVoice | ModelType::VibeVoice => &[][..],
     };
 
@@ -614,6 +609,15 @@ fn build_request(
         ModelType::VibeVoice => SynthesisRequest::new(&sample.text)
             .with_cfg_scale(DEFAULT_VIBEVOICE_CFG_SCALE)
             .with_temperature(DEFAULT_VIBEVOICE_TEMPERATURE),
+        ModelType::VibeVoiceRealtime => {
+            let mut request = SynthesisRequest::new(&sample.text)
+                .with_cfg_scale(DEFAULT_VIBEVOICE_CFG_SCALE)
+                .with_temperature(DEFAULT_VIBEVOICE_TEMPERATURE);
+            if let Some(voice) = selected_voice {
+                request = request.with_voice(voice);
+            }
+            request
+        }
         ModelType::Voxtral => {
             let mut request =
                 SynthesisRequest::new(&sample.text).with_language(&sample.language_code);

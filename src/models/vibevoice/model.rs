@@ -12,10 +12,11 @@ use crate::traits::{ModelInfo, SynthesisRequest, TtsModel};
 use super::config::{VibeVoiceConfig, VibeVoicePreprocessorConfig};
 use super::diffusion::{DpmSolverMultistepScheduler, VibeVoiceDiffusionHead};
 use super::generation::{
-    feedback_mode, finish_segment, generation_seed, load_diffusion_noise_fixture, prompt_positions,
-    random_normal_tensor, sample_encoder_output, sample_token, scale_acoustic_features,
-    stack_latents, valid_generated_tokens, DecoderCacheState, DiffusionNoiseCursor,
-    DiffusionNoiseFixture, GenerationArtifacts, GenerationParams, SimpleRng, TokenSequenceState,
+    feedback_mode, finish_segment, generation_seed, load_diffusion_noise_fixture,
+    progress_interval, prompt_positions, random_normal_tensor, sample_encoder_output, sample_token,
+    scale_acoustic_features, semantic_feedback_window, stack_latents, valid_generated_tokens,
+    DecoderCacheState, DiffusionNoiseCursor, DiffusionNoiseFixture, GenerationArtifacts,
+    GenerationParams, SimpleRng, TokenSequenceState,
 };
 use super::loader::{
     build_processor, load_components, load_preprocessor_config, resolve_runtime_dtype,
@@ -261,6 +262,13 @@ impl VibeVoiceModel {
                 rng,
             )?;
             generated_trace.push(next_token);
+            self.maybe_report_progress(
+                generated_trace.len(),
+                current_segment.len(),
+                finished_segments.len(),
+                positive_state.next_position(),
+                params.max_new_tokens,
+            );
 
             if next_token == spec.eos_id {
                 break;
@@ -369,7 +377,7 @@ impl VibeVoiceModel {
         positive_condition: &Tensor,
         negative_condition: &Tensor,
         cfg_scale: f32,
-        mut diffusion_noise_cursor: Option<&mut DiffusionNoiseCursor<'_>>,
+        diffusion_noise_cursor: Option<&mut DiffusionNoiseCursor<'_>>,
         rng: &mut SimpleRng,
     ) -> Result<Tensor, TtsError> {
         let mut scheduler = self.noise_scheduler.lock().map_err(|_| {
@@ -395,16 +403,23 @@ impl VibeVoiceModel {
     }
 
     fn build_diffusion_override(&self, segment_latents: &[Tensor]) -> Result<Tensor, TtsError> {
-        if feedback_mode() == Some("token") {
+        let feedback_mode = self.effective_feedback_mode();
+        if feedback_mode == "token" {
             return self.diffusion_token_embedding();
         }
 
-        let segment = stack_latents(segment_latents)?;
-        let acoustic_embed = self.acoustic_feedback_embedding(&segment)?;
-        if feedback_mode() == Some("acoustic") {
+        let latest_latent = segment_latents.last().ok_or_else(|| {
+            TtsError::ModelError(
+                "VibeVoice cannot build feedback embeddings without at least one speech latent"
+                    .to_string(),
+            )
+        })?;
+        let acoustic_embed = self.acoustic_feedback_embedding(latest_latent)?;
+        if feedback_mode == "acoustic" {
             return Ok(acoustic_embed);
         }
 
+        let segment = self.semantic_feedback_segment(segment_latents)?;
         self.semantic_feedback_embedding(&segment, &acoustic_embed)
     }
 
@@ -431,6 +446,34 @@ impl VibeVoiceModel {
         if std::env::var_os("VIBEVOICE_DEBUG_TRACE").is_some() {
             eprintln!("VibeVoice generated tokens: {:?}", generated_trace);
         }
+    }
+
+    fn effective_feedback_mode(&self) -> &'static str {
+        match feedback_mode() {
+            Some("token") => "token",
+            Some("acoustic") => "acoustic",
+            Some("semantic") => "semantic",
+            _ => "semantic",
+        }
+    }
+
+    fn maybe_report_progress(
+        &self,
+        generated_tokens: usize,
+        current_segment_latents: usize,
+        finished_segments: usize,
+        context_position: usize,
+        max_new_tokens: usize,
+    ) {
+        let interval = progress_interval();
+        if interval == 0 || generated_tokens == 0 || generated_tokens % interval != 0 {
+            return;
+        }
+
+        eprintln!(
+            "VibeVoice progress: generated {generated_tokens}/{max_new_tokens} token(s), current segment {current_segment_latents} latent(s), finished {finished_segments} segment(s), context position {context_position}/{}",
+            self.config.decoder_config.max_position_embeddings,
+        );
     }
 
     fn initial_diffusion_speech(
@@ -474,12 +517,17 @@ impl VibeVoiceModel {
         scheduler.step(&expanded, speech).map_err(Into::into)
     }
 
-    fn acoustic_feedback_embedding(&self, segment: &Tensor) -> Result<Tensor, TtsError> {
+    fn acoustic_feedback_embedding(&self, speech_latent: &Tensor) -> Result<Tensor, TtsError> {
         self.acoustic_connector
-            .forward(&segment.narrow(1, segment.dim(1)? - 1, 1)?)?
+            .forward(&speech_latent.unsqueeze(0)?.unsqueeze(1)?)?
             .squeeze(0)?
             .squeeze(0)
             .map_err(Into::into)
+    }
+
+    fn semantic_feedback_segment(&self, segment_latents: &[Tensor]) -> Result<Tensor, TtsError> {
+        let window = semantic_feedback_window().min(segment_latents.len());
+        stack_latents(&segment_latents[segment_latents.len() - window..])
     }
 
     fn semantic_feedback_embedding(

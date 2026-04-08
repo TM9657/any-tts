@@ -369,7 +369,7 @@ impl SineGen {
             }
 
             let mut phase_per_harmonic = vec![vec![0.0f32; length]; harmonic_dim];
-            for harmonic in 0..harmonic_dim {
+            for (harmonic, phase_values) in phase_per_harmonic.iter_mut().enumerate() {
                 let harmonic_scale = (harmonic + 1) as f32;
                 let mut rad_values: Vec<f32> = fundamental
                     .iter()
@@ -392,13 +392,15 @@ impl SineGen {
                     .iter()
                     .map(|value| *value * self.upsample_scale as f32)
                     .collect();
-                phase_per_harmonic[harmonic] = linear_resample_1d(&scaled_phase, length);
+                *phase_values = linear_resample_1d(&scaled_phase, length);
             }
 
-            for time in 0..length {
-                for harmonic in 0..harmonic_dim {
-                    sine_values.push(phase_per_harmonic[harmonic][time].sin() * self.sine_amp);
-                }
+            for time_index in 0..length {
+                sine_values.extend(
+                    phase_per_harmonic
+                        .iter()
+                        .map(|phase_values| phase_values[time_index].sin() * self.sine_amp),
+                );
             }
         }
 

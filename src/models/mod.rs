@@ -12,6 +12,9 @@ pub mod qwen3_tts;
 #[cfg(feature = "vibevoice")]
 pub mod vibevoice;
 
+#[cfg(feature = "vibevoice")]
+pub mod vibevoice_realtime;
+
 #[cfg(feature = "voxtral")]
 pub mod voxtral;
 
@@ -120,6 +123,34 @@ const VIBEVOICE_ASSETS: &[ModelAssetRequirement] = &[
     },
 ];
 
+const VIBEVOICE_REALTIME_ASSETS: &[ModelAssetRequirement] = &[
+    ModelAssetRequirement {
+        pattern: "config.json",
+        required: true,
+        purpose: "Main VibeVoice Realtime config.",
+    },
+    ModelAssetRequirement {
+        pattern: "tokenizer.json",
+        required: true,
+        purpose: "Text tokenizer.",
+    },
+    ModelAssetRequirement {
+        pattern: "model.safetensors",
+        required: true,
+        purpose: "Realtime VibeVoice weights.",
+    },
+    ModelAssetRequirement {
+        pattern: "preprocessor_config.json",
+        required: false,
+        purpose: "Published preprocessing defaults.",
+    },
+    ModelAssetRequirement {
+        pattern: "voices/*.pt",
+        required: false,
+        purpose: "Optional cached-prompt voice presets from the upstream demo bundle.",
+    },
+];
+
 const VOXTRAL_ASSETS: &[ModelAssetRequirement] = &[
     ModelAssetRequirement {
         pattern: "params.json",
@@ -154,6 +185,8 @@ pub enum ModelType {
     Qwen3Tts,
     /// VibeVoice-1.5B: native Candle implementation with diffusion speech tokens.
     VibeVoice,
+    /// VibeVoice-Realtime-0.5B: native Candle implementation with cached prompt presets.
+    VibeVoiceRealtime,
     /// Voxtral-4B-TTS-2603: native Candle implementation.
     Voxtral,
 }
@@ -166,6 +199,7 @@ impl ModelType {
             Self::OmniVoice => OMNIVOICE_ASSETS,
             Self::Qwen3Tts => QWEN3_TTS_ASSETS,
             Self::VibeVoice => VIBEVOICE_ASSETS,
+            Self::VibeVoiceRealtime => VIBEVOICE_REALTIME_ASSETS,
             Self::Voxtral => VOXTRAL_ASSETS,
         }
     }

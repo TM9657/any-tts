@@ -623,11 +623,16 @@ impl DecoderStage {
 
         // block.2, 3, 4 = ResBlocks with dilations 1, 3, 9
         let dilations = [1, 3, 9];
+        if num_res_blocks > dilations.len() {
+            return Err(candle_core::Error::Msg(format!(
+                "Unsupported decoder stage with {num_res_blocks} residual blocks"
+            )));
+        }
         let mut res_blocks = Vec::with_capacity(num_res_blocks);
-        for i in 0..num_res_blocks {
+        for (i, dilation) in dilations.iter().copied().enumerate().take(num_res_blocks) {
             res_blocks.push(SnacResBlock::load(
                 out_channels,
-                dilations[i],
+                dilation,
                 block_vb.pp(format!("{}", i + 2)),
             )?);
         }

@@ -57,16 +57,13 @@ impl DeviceSelection {
 
     /// Preferred runtime candidates for the current binary, ordered fastest-first.
     pub fn preferred_runtime_candidates() -> Vec<Self> {
-        let mut candidates = Vec::new();
-
-        #[cfg(feature = "cuda")]
-        candidates.push(Self::Cuda(0));
-
-        #[cfg(feature = "metal")]
-        candidates.push(Self::Metal(0));
-
-        candidates.push(Self::Cpu);
-        candidates
+        vec![
+            #[cfg(feature = "cuda")]
+            Self::Cuda(0),
+            #[cfg(feature = "metal")]
+            Self::Metal(0),
+            Self::Cpu,
+        ]
     }
 
     /// Runtime candidates that successfully resolve on the current machine.

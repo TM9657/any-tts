@@ -13,8 +13,12 @@ use super::speech_tokenizer::VibeVoiceTokenizerEncoderOutput;
 
 const DIFFUSION_NOISE_FORMAT: &str = "vibevoice-diffusion-noise-v1";
 const DEFAULT_GENERATION_SEED: u64 = 299_792_458;
+const DEFAULT_PROGRESS_INTERVAL: usize = 0;
+const DEFAULT_SEMANTIC_FEEDBACK_WINDOW: usize = usize::MAX;
 const VIBEVOICE_NOISE_PATH_ENV: &str = "VIBEVOICE_NOISE_PATH";
+const VIBEVOICE_PROGRESS_INTERVAL_ENV: &str = "VIBEVOICE_PROGRESS_INTERVAL";
 const VIBEVOICE_SEED_ENV: &str = "VIBEVOICE_SEED";
+const VIBEVOICE_SEMANTIC_FEEDBACK_WINDOW_ENV: &str = "VIBEVOICE_SEMANTIC_FEEDBACK_WINDOW";
 
 pub type LayerKvCache = Option<(Tensor, Tensor)>;
 
@@ -383,8 +387,24 @@ pub fn feedback_mode() -> Option<&'static str> {
     match std::env::var("VIBEVOICE_FEEDBACK_MODE").ok().as_deref() {
         Some("token") => Some("token"),
         Some("acoustic") => Some("acoustic"),
+        Some("semantic") => Some("semantic"),
         _ => None,
     }
+}
+
+pub fn progress_interval() -> usize {
+    std::env::var(VIBEVOICE_PROGRESS_INTERVAL_ENV)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_PROGRESS_INTERVAL)
+}
+
+pub fn semantic_feedback_window() -> usize {
+    std::env::var(VIBEVOICE_SEMANTIC_FEEDBACK_WINDOW_ENV)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .map(|value| value.max(1))
+        .unwrap_or(DEFAULT_SEMANTIC_FEEDBACK_WINDOW)
 }
 
 fn greedy_token(logits: &[f32], valid_tokens: &[u32]) -> Result<u32, TtsError> {

@@ -472,7 +472,7 @@ pub struct VibeVoiceTokenizerEncoderOutput {
 
 pub struct VibeVoiceAcousticTokenizer {
     config: VibeVoiceTokenizerConfig,
-    encoder: TokenizerEncoder,
+    encoder: Option<TokenizerEncoder>,
     decoder: TokenizerDecoder,
 }
 
@@ -482,7 +482,16 @@ impl VibeVoiceAcousticTokenizer {
         let decoder = TokenizerDecoder::load(config, vb.pp("decoder"))?;
         Ok(Self {
             config: config.clone(),
-            encoder,
+            encoder: Some(encoder),
+            decoder,
+        })
+    }
+
+    pub fn load_decoder_only(config: &VibeVoiceTokenizerConfig, vb: VarBuilder) -> Result<Self> {
+        let decoder = TokenizerDecoder::load(config, vb.pp("decoder"))?;
+        Ok(Self {
+            config: config.clone(),
+            encoder: None,
             decoder,
         })
     }
@@ -492,7 +501,10 @@ impl VibeVoiceAcousticTokenizer {
     }
 
     pub fn encode(&self, audio: &Tensor) -> Result<VibeVoiceTokenizerEncoderOutput> {
-        let latents = self.encoder.forward(audio)?;
+        let encoder = self.encoder.as_ref().ok_or_else(|| {
+            candle_core::Error::Msg("Tokenizer encoder weights are not loaded".to_string())
+        })?;
+        let latents = encoder.forward(audio)?;
         Ok(VibeVoiceTokenizerEncoderOutput {
             mean: latents.transpose(1, 2)?,
             std: Some(self.config.fix_std),

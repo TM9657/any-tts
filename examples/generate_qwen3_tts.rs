@@ -29,40 +29,46 @@ struct CliArgs {
     model_path: Option<String>,
 }
 
-type SampleSpec = (&'static str, &'static str, &'static str);
+type SampleSpec = (&'static str, &'static str, &'static str, &'static str);
 
 const SAMPLE_SPECS: &[SampleSpec] = &[
     (
-        "english",
+        "English",
         "english_hello",
         "Hello! This is a test of the Qwen3 text to speech model, running entirely in Rust.",
+        "ryan",
     ),
     (
-        "german",
+        "German",
         "german_hallo",
         "Hallo! Dies ist ein Test der Qwen3 Sprachsynthese, vollständig in Rust implementiert.",
+        "dylan",
     ),
     (
-        "german",
+        "German",
         "german_long",
         "Die Entwicklung von Sprachsynthese-Systemen hat in den letzten Jahren enorme \
          Fortschritte gemacht. Neuronale Netzwerke ermöglichen eine natürlich klingende \
          Ausgabe, die kaum von menschlicher Sprache zu unterscheiden ist.",
+        "dylan",
     ),
     (
-        "chinese",
+        "Chinese",
         "chinese_nihao",
         "你好！这是Qwen3文本转语音模型的测试，完全用Rust实现。",
+        "dylan",
     ),
     (
-        "japanese",
+        "Japanese",
         "japanese_konnichiwa",
         "こんにちは！これはQwen3テキスト読み上げモデルのテストです。",
+        "dylan",
     ),
     (
-        "korean",
+        "Korean",
         "korean_annyeong",
         "안녕하세요! 이것은 Qwen3 텍스트 음성 변환 모델의 테스트입니다.",
+        "dylan",
     ),
 ];
 
@@ -135,22 +141,15 @@ fn print_model_summary(model: &Qwen3TtsModel, output_dir: &Path) {
 }
 
 fn render_samples(model: &Qwen3TtsModel, output_dir: &Path) {
-    let voices = model.supported_voices();
-    let voice = voices
-        .iter()
-        .find(|candidate| candidate.as_str() == "dylan")
-        .or_else(|| voices.first())
-        .map(String::as_str);
+    // let voices = model.supported_voices();
 
-    for (lang, name, text) in SAMPLE_SPECS {
+    for (lang, name, text, speaker) in SAMPLE_SPECS {
         let stem = format!("qwen3tts_{name}");
         println!("▸ [{lang}] {stem}");
         println!("  \"{text}\"");
 
         let mut request = SynthesisRequest::new(*text).with_language(*lang);
-        if let Some(selected_voice) = voice {
-            request = request.with_voice(selected_voice);
-        }
+        request = request.with_voice(speaker.to_string());
 
         match model.synthesize(&request) {
             Ok(audio) => {

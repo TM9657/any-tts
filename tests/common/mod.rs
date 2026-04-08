@@ -23,15 +23,3 @@ pub fn assert_valid_audio(audio: &AudioSamples) {
         );
     }
 }
-
-/// Validate that the audio has approximately the expected duration.
-pub fn assert_approximate_duration(audio: &AudioSamples, expected_secs: f32, tolerance: f32) {
-    let actual = audio.duration_secs();
-    assert!(
-        (actual - expected_secs).abs() < tolerance,
-        "Expected duration ~{}s (±{}s), got {}s",
-        expected_secs,
-        tolerance,
-        actual
-    );
-}

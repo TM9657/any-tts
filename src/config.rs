@@ -759,6 +759,7 @@ impl ModelFiles {
                     let fallback_repo = match model_type {
                         ModelType::Qwen3Tts => "Qwen/Qwen2.5-0.5B",
                         ModelType::VibeVoice => "Qwen/Qwen2.5-1.5B",
+                        ModelType::VibeVoiceRealtime => "Qwen/Qwen2.5-0.5B",
                         _ => "Qwen/Qwen2.5-0.5B",
                     };
                     info!(
@@ -805,7 +806,7 @@ impl ModelFiles {
             ModelType::Qwen3Tts => {
                 self.download_qwen3tts_extras(bearer_token)?;
             }
-            ModelType::VibeVoice => {
+            ModelType::VibeVoice | ModelType::VibeVoiceRealtime => {
                 self.download_vibevoice_extras(model_id, bearer_token)?;
             }
         }
@@ -1129,7 +1130,7 @@ impl ModelFiles {
             ModelType::Kokoro => {
                 // voices_dir is optional
             }
-            ModelType::VibeVoice => {}
+            ModelType::VibeVoice | ModelType::VibeVoiceRealtime => {}
             ModelType::Voxtral => unreachable!(),
         }
 
@@ -1277,7 +1278,7 @@ fn preferred_dtype_for(model_type: ModelType, device: DeviceSelection) -> DType 
             DeviceSelection::Metal(_) => DType::BF16,
             DeviceSelection::Auto => DType::BF16,
         },
-        ModelType::VibeVoice => match device {
+        ModelType::VibeVoice | ModelType::VibeVoiceRealtime => match device {
             DeviceSelection::Cpu => DType::F32,
             DeviceSelection::Cuda(_) => DType::BF16,
             DeviceSelection::Metal(_) => DType::F32,
@@ -1701,6 +1702,7 @@ impl TtsConfig {
             ModelType::OmniVoice => "k2-fsa/OmniVoice",
             ModelType::Qwen3Tts => "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
             ModelType::VibeVoice => "microsoft/VibeVoice-1.5B",
+            ModelType::VibeVoiceRealtime => "microsoft/VibeVoice-Realtime-0.5B",
             ModelType::Voxtral => "mistralai/Voxtral-4B-TTS-2603",
         }
     }
@@ -1726,7 +1728,8 @@ impl TtsConfig {
             ModelType::Kokoro
             | ModelType::OmniVoice
             | ModelType::Qwen3Tts
-            | ModelType::VibeVoice => None,
+            | ModelType::VibeVoice
+            | ModelType::VibeVoiceRealtime => None,
         }
     }
 
@@ -1744,6 +1747,7 @@ impl TtsConfig {
             | ModelType::OmniVoice
             | ModelType::Qwen3Tts
             | ModelType::VibeVoice
+            | ModelType::VibeVoiceRealtime
             | ModelType::Voxtral => None,
         }
     }

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use serde::Deserialize;
 
@@ -23,10 +22,6 @@ pub struct VoxtralConfig {
 }
 
 impl VoxtralConfig {
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TtsError> {
-        Self::from_bytes(std::fs::read(path)?)
-    }
-
     pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, TtsError> {
         Ok(serde_json::from_slice(bytes.as_ref())?)
     }
@@ -42,8 +37,10 @@ pub struct MultimodalConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AudioEncodingArgs {
     pub sampling_rate: u32,
-    pub frame_rate: f64,
-    pub num_codebooks: usize,
+    #[serde(rename = "frame_rate")]
+    _frame_rate: f64,
+    #[serde(rename = "num_codebooks")]
+    _num_codebooks: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -59,10 +56,10 @@ pub struct AcousticTransformerArgs {
     pub use_biases: bool,
     #[serde(default = "default_norm_eps")]
     pub norm_eps: f64,
-    #[serde(default = "default_sigma")]
-    pub sigma: f64,
-    #[serde(default)]
-    pub sigma_max: Option<f64>,
+    #[serde(default = "default_sigma", rename = "sigma")]
+    _sigma: f64,
+    #[serde(default, rename = "sigma_max")]
+    _sigma_max: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,15 +70,15 @@ pub struct MultimodalAudioModelArgs {
     pub audio_encoding_args: AudioEncodingArgs,
     pub audio_token_id: u32,
     pub begin_audio_token_id: u32,
-    #[serde(default)]
-    pub input_embedding_concat_type: Option<String>,
+    #[serde(default, rename = "input_embedding_concat_type")]
+    _input_embedding_concat_type: Option<String>,
     pub acoustic_transformer_args: AcousticTransformerArgs,
-    #[serde(default)]
-    pub p_uncond: Option<f64>,
-    #[serde(default)]
-    pub text_feature_bugged: Option<bool>,
-    #[serde(default)]
-    pub condition_dropped_token_id: Option<u32>,
+    #[serde(default, rename = "p_uncond")]
+    _p_uncond: Option<f64>,
+    #[serde(default, rename = "text_feature_bugged")]
+    _text_feature_bugged: Option<bool>,
+    #[serde(default, rename = "condition_dropped_token_id")]
+    _condition_dropped_token_id: Option<u32>,
 }
 
 impl MultimodalAudioModelArgs {
@@ -188,14 +185,6 @@ impl Default for AudioTokenizerArgs {
 }
 
 impl AudioTokenizerArgs {
-    pub fn encoder_transformer_lengths(&self) -> Result<Vec<usize>, TtsError> {
-        parse_csv_usize(&self.encoder_transformer_lengths_str)
-    }
-
-    pub fn encoder_convs_kernels(&self) -> Result<Vec<usize>, TtsError> {
-        parse_csv_usize(&self.encoder_convs_kernels_str)
-    }
-
     pub fn encoder_convs_strides(&self) -> Result<Vec<usize>, TtsError> {
         parse_csv_usize(&self.encoder_convs_strides_str)
     }

@@ -12,6 +12,7 @@
 //! - **Qwen3-TTS-12Hz-1.7B-CustomVoice** — 1.7B parameter multi-codebook LM for 10 languages
 //! - **Qwen3-TTS-12Hz-1.7B-VoiceDesign** — 1.7B model with natural language voice descriptions
 //! - **VibeVoice-1.5B** — native Candle implementation of Microsoft's multi-speaker speech diffusion model
+//! - **VibeVoice-Realtime-0.5B** — native Candle implementation of Microsoft's cached-prompt realtime TTS model
 //! - **Voxtral-4B-TTS-2603** — native Candle implementation of Mistral's 4B TTS model
 //!
 //! ## Feature Flags
@@ -98,6 +99,11 @@ pub fn load_model(config: TtsConfig) -> Result<Box<dyn TtsModel>, TtsError> {
         #[cfg(feature = "vibevoice")]
         ModelType::VibeVoice => {
             let model = models::vibevoice::VibeVoiceModel::load(config)?;
+            Ok(Box::new(model))
+        }
+        #[cfg(feature = "vibevoice")]
+        ModelType::VibeVoiceRealtime => {
+            let model = models::vibevoice_realtime::VibeVoiceRealtimeModel::load(config)?;
             Ok(Box::new(model))
         }
         #[cfg(feature = "voxtral")]

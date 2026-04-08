@@ -26,6 +26,50 @@ include = [
 no-default-features = true
 features = ["download"]
 
+[[example]]
+name = "benchmark_omnivoice"
+required-features = ["omnivoice"]
+
+[[example]]
+name = "generate_kokoro"
+required-features = ["kokoro"]
+
+[[example]]
+name = "generate_omnivoice"
+required-features = ["omnivoice"]
+
+[[example]]
+name = "generate_qwen3_tts"
+required-features = ["qwen3-tts"]
+
+[[example]]
+name = "quick_test_qwen3"
+required-features = ["qwen3-tts"]
+
+[[example]]
+name = "generate_vibevoice"
+required-features = ["vibevoice"]
+
+[[example]]
+name = "generate_vibevoice_realtime"
+required-features = ["vibevoice"]
+
+[[example]]
+name = "generate_voxtral"
+required-features = ["voxtral"]
+
+[[test]]
+name = "test_kokoro"
+required-features = ["kokoro"]
+
+[[test]]
+name = "test_omnivoice"
+required-features = ["omnivoice"]
+
+[[test]]
+name = "test_qwen3_tts"
+required-features = ["qwen3-tts"]
+
 [features]
 default = ["qwen3-tts", "kokoro", "omnivoice", "vibevoice", "voxtral", "download"]
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]

@@ -1082,7 +1082,6 @@ impl TokenizerConvTranspose1d {
 
 #[derive(Clone, Copy)]
 enum PadMode {
-    ConstantZero,
     Reflect,
     Replicate,
 }
@@ -1859,7 +1858,6 @@ fn pad1d(x: &Tensor, paddings: (usize, usize), mode: PadMode) -> Result<Tensor, 
     let x = x.contiguous()?;
 
     match mode {
-        PadMode::ConstantZero => pad_constant_zero(&x, left, right),
         PadMode::Reflect => pad_reflect(&x, left, right),
         PadMode::Replicate => pad_replicate(&x, left, right),
     }

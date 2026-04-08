@@ -20,7 +20,7 @@ use crate::traits::{ModelInfo, SynthesisRequest, TtsModel};
 use super::code_predictor::CodePredictor;
 use super::config::Qwen3TtsConfig;
 use super::speech_tokenizer::{SpeechTokenizerConfig, SpeechTokenizerDecoder};
-use super::talker::TalkerLm;
+use super::talker::{TalkerGenerationConfig, TalkerLm};
 
 /// Qwen3-TTS-12Hz TTS model.
 ///
@@ -153,13 +153,8 @@ impl TtsModel for Qwen3TtsModel {
 
         info!("Input sequence shape: {:?}", full_input.shape());
 
-        let (codec_tokens_g0, hidden_states) = self.generate_codec_tokens(
-            &full_input,
-            &trailing_text_hidden,
-            speaker_id,
-            language_id,
-            request,
-        )?;
+        let (codec_tokens_g0, hidden_states) =
+            self.generate_codec_tokens(&full_input, &trailing_text_hidden, request)?;
         let all_codes = self.assemble_all_codes(&codec_tokens_g0, &hidden_states)?;
         let samples = self.decode_to_audio(&all_codes)?;
 
@@ -536,8 +531,6 @@ impl Qwen3TtsModel {
         &self,
         full_input: &Tensor,
         trailing_text_hidden: &Tensor,
-        speaker_id: Option<u32>,
-        language_id: Option<u32>,
         request: &SynthesisRequest,
     ) -> Result<(Vec<u32>, Vec<Vec<u32>>), TtsError> {
         let max_tokens = request.max_tokens.unwrap_or(2048);
@@ -552,7 +545,6 @@ impl Qwen3TtsModel {
 
         let (codec_tokens_g0, group_tokens) = if has_cp {
             let cp_mutex = self.code_predictor.as_ref().unwrap();
-            let device = self.device.clone();
             let mut predict_fn = |past_hidden: &Tensor,
                                   g0_token: u32,
                                   g0_embed: &Tensor,
@@ -561,20 +553,12 @@ impl Qwen3TtsModel {
                 let mut cp = cp_mutex.lock().unwrap();
                 cp.predict_step_and_sum(past_hidden, g0_token, g0_embed, dev)
             };
+            let generation_config = TalkerGenerationConfig::new(max_tokens, temperature, top_k)
+                .with_predict_and_sum_fn(&mut predict_fn);
             self.talker
                 .lock()
                 .unwrap()
-                .generate(
-                    full_input,
-                    trailing_text_hidden,
-                    speaker_id,
-                    language_id,
-                    max_tokens,
-                    temperature,
-                    top_k,
-                    &device,
-                    Some(&mut predict_fn),
-                )
+                .generate(full_input, trailing_text_hidden, generation_config)
                 .map_err(TtsError::ComputeError)?
         } else {
             self.talker
@@ -583,13 +567,7 @@ impl Qwen3TtsModel {
                 .generate(
                     full_input,
                     trailing_text_hidden,
-                    speaker_id,
-                    language_id,
-                    max_tokens,
-                    temperature,
-                    top_k,
-                    &self.device,
-                    None,
+                    TalkerGenerationConfig::new(max_tokens, temperature, top_k),
                 )
                 .map_err(TtsError::ComputeError)?
         };

@@ -1,4 +1,4 @@
-//! Tests for the core TtsModel trait and API types.
+//! Tests for the core TtsModel API types.
 
 use any_tts::{AudioSamples, ModelFiles, ModelType, SynthesisRequest, TtsConfig};
 use std::path::PathBuf;
@@ -63,6 +63,12 @@ fn test_tts_config_default_hf_ids() {
     assert_eq!(
         voxtral.default_hf_model_id(),
         "mistralai/Voxtral-4B-TTS-2603"
+    );
+
+    let realtime = TtsConfig::new(ModelType::VibeVoiceRealtime);
+    assert_eq!(
+        realtime.default_hf_model_id(),
+        "microsoft/VibeVoice-Realtime-0.5B"
     );
 }
 
@@ -260,11 +266,14 @@ fn test_model_type_equality() {
     assert_eq!(ModelType::Qwen3Tts, ModelType::Qwen3Tts);
     assert_eq!(ModelType::Kokoro, ModelType::Kokoro);
     assert_eq!(ModelType::OmniVoice, ModelType::OmniVoice);
+    assert_eq!(ModelType::VibeVoiceRealtime, ModelType::VibeVoiceRealtime);
     assert_eq!(ModelType::Voxtral, ModelType::Voxtral);
     assert_ne!(ModelType::Qwen3Tts, ModelType::Kokoro);
     assert_ne!(ModelType::Qwen3Tts, ModelType::OmniVoice);
+    assert_ne!(ModelType::Qwen3Tts, ModelType::VibeVoiceRealtime);
     assert_ne!(ModelType::Qwen3Tts, ModelType::Voxtral);
     assert_ne!(ModelType::Kokoro, ModelType::OmniVoice);
+    assert_ne!(ModelType::Kokoro, ModelType::VibeVoiceRealtime);
     assert_ne!(ModelType::Kokoro, ModelType::Voxtral);
     assert_ne!(ModelType::OmniVoice, ModelType::Voxtral);
 }

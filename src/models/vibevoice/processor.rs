@@ -11,6 +11,8 @@ use super::config::VibeVoicePreprocessorConfig;
 
 const SYSTEM_PROMPT: &str = " Transform the text provided by various speakers into speech output, utilizing the distinct voice of each respective speaker.\n";
 
+type VoicePrompt = (Vec<u32>, Vec<bool>, Vec<f32>);
+
 #[derive(Debug, Clone)]
 pub struct VibeVoiceTokenizerSpec {
     pub speech_start_id: u32,
@@ -165,7 +167,7 @@ impl VibeVoiceProcessor {
     fn create_voice_prompt(
         &self,
         reference_audio: &ReferenceAudio,
-    ) -> Result<(Vec<u32>, Vec<bool>, Vec<f32>), TtsError> {
+    ) -> Result<VoicePrompt, TtsError> {
         let mut tokens = self.tokenizer.encode(" Voice input:\n")?;
         let mut masks = vec![false; tokens.len()];
         let prefix_tokens = self.tokenizer.encode(" Speaker 0:")?;

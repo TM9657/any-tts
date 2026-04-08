@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
-use std::path::Path;
 
 use base64::Engine;
 use rustc_hash::FxHasher;
@@ -49,7 +48,6 @@ struct TekkenSpecialToken {
 pub struct VoxtralTokenizer {
     bpe: CoreBPE,
     bos_token_id: u32,
-    eos_token_id: u32,
     audio_token_id: u32,
     begin_audio_token_id: u32,
     next_audio_text_token_id: u32,
@@ -57,10 +55,6 @@ pub struct VoxtralTokenizer {
 }
 
 impl VoxtralTokenizer {
-    pub fn from_file(path: impl AsRef<Path>, config: &VoxtralConfig) -> Result<Self, TtsError> {
-        Self::from_bytes(std::fs::read(path)?, config)
-    }
-
     pub fn from_bytes(bytes: impl AsRef<[u8]>, config: &VoxtralConfig) -> Result<Self, TtsError> {
         let tekken: TekkenFile = serde_json::from_slice(bytes.as_ref())?;
 
@@ -112,7 +106,7 @@ impl VoxtralTokenizer {
         let bos_token_id = *special_tokens
             .get(BOS_TOKEN)
             .ok_or_else(|| missing_token(BOS_TOKEN))?;
-        let eos_token_id = *special_tokens
+        special_tokens
             .get(EOS_TOKEN)
             .ok_or_else(|| missing_token(EOS_TOKEN))?;
         let audio_token_id = *special_tokens
@@ -150,7 +144,6 @@ impl VoxtralTokenizer {
         Ok(Self {
             bpe,
             bos_token_id,
-            eos_token_id,
             audio_token_id,
             begin_audio_token_id,
             next_audio_text_token_id,
@@ -173,22 +166,6 @@ impl VoxtralTokenizer {
         prompt.push(self.repeat_audio_text_token_id);
         prompt.push(self.begin_audio_token_id);
         prompt
-    }
-
-    pub fn bos_token_id(&self) -> u32 {
-        self.bos_token_id
-    }
-
-    pub fn eos_token_id(&self) -> u32 {
-        self.eos_token_id
-    }
-
-    pub fn audio_token_id(&self) -> u32 {
-        self.audio_token_id
-    }
-
-    pub fn begin_audio_token_id(&self) -> u32 {
-        self.begin_audio_token_id
     }
 }
 

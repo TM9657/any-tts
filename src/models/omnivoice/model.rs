@@ -413,10 +413,12 @@ impl TtsModel for OmniVoiceModel {
 
             let pred_tokens_flat = pred_tokens.flatten_all()?.to_vec1::<u32>()?;
             let mut scores_flat = scores.flatten_all()?.to_vec1::<f32>()?;
-            for layer in 0..self.config.num_audio_codebook {
-                for pos in 0..target_len {
-                    let flat_index = index_2d(layer, pos, target_len);
-                    scores_flat[flat_index] -= layer_penalties[layer];
+            for (layer_scores, penalty) in scores_flat
+                .chunks_exact_mut(target_len)
+                .zip(layer_penalties.iter().copied())
+            {
+                for score in layer_scores {
+                    *score -= penalty;
                 }
             }
 
@@ -590,8 +592,8 @@ impl OmniVoiceModel {
         }
 
         let mut audio_mask = vec![0u8; seq_len];
-        for pos in seq_len - target_len..seq_len {
-            audio_mask[pos] = 1;
+        for audio_flag in audio_mask.iter_mut().skip(seq_len - target_len) {
+            *audio_flag = 1;
         }
 
         Ok(InferenceInputs {

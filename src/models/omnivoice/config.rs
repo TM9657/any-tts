@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use serde::Deserialize;
 
 use crate::error::TtsError;
@@ -15,10 +13,6 @@ pub struct OmniVoiceConfig {
 }
 
 impl OmniVoiceConfig {
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TtsError> {
-        Self::from_bytes(std::fs::read(path)?)
-    }
-
     pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, TtsError> {
         let mut config: Self = serde_json::from_slice(bytes.as_ref())?;
         if config.audio_codebook_weights.is_empty() {
@@ -72,10 +66,6 @@ pub struct OmniVoiceAudioTokenizerConfig {
 }
 
 impl OmniVoiceAudioTokenizerConfig {
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TtsError> {
-        Self::from_bytes(std::fs::read(path)?)
-    }
-
     pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, TtsError> {
         Ok(serde_json::from_slice(bytes.as_ref())?)
     }

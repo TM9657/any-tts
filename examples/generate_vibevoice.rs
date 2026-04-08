@@ -27,6 +27,7 @@ struct VibeVoiceExampleConfig {
 #[derive(Debug, Clone, Copy)]
 struct DenoiseVariant {
     label: &'static str,
+    description: &'static str,
     options: DenoiseOptions,
 }
 
@@ -38,17 +39,52 @@ fn load_example_config() -> VibeVoiceExampleConfig {
         .unwrap_or_else(|err| panic!("Failed to parse {}: {err}", path.display()))
 }
 
-fn denoise_variants() -> [DenoiseVariant; 2] {
+fn denoise_variants() -> [DenoiseVariant; 5] {
     [
         DenoiseVariant {
+            label: "denoised_light",
+            description: "light cleanup",
+            options: DenoiseOptions {
+                noise_reduction: 0.95,
+                residual_floor: 0.14,
+                wet_mix: 0.72,
+                ..DenoiseOptions::default()
+            },
+        },
+        DenoiseVariant {
             label: "denoised_default",
+            description: "balanced cleanup",
             options: DenoiseOptions::default(),
         },
         DenoiseVariant {
+            label: "denoised_strong",
+            description: "strong cleanup",
+            options: DenoiseOptions {
+                noise_reduction: 1.6,
+                residual_floor: 0.055,
+                wet_mix: 0.95,
+                ..DenoiseOptions::default()
+            },
+        },
+        DenoiseVariant {
             label: "denoised_aggressive",
+            description: "aggressive cleanup",
             options: DenoiseOptions {
                 noise_reduction: 1.65,
                 residual_floor: 0.05,
+                wet_mix: 1.0,
+                ..DenoiseOptions::default()
+            },
+        },
+        DenoiseVariant {
+            label: "denoised_max",
+            description: "maximum cleanup",
+            options: DenoiseOptions {
+                speech_low_hz: 140.0,
+                speech_high_hz: 5_200.0,
+                noise_estimation_percentile: 0.28,
+                noise_reduction: 2.15,
+                residual_floor: 0.025,
                 wet_mix: 1.0,
                 ..DenoiseOptions::default()
             },
@@ -142,7 +178,8 @@ fn main() {
         audio.sample_rate
     );
     println!("Saved VibeVoice denoise variants:");
-    for path in denoise_paths {
-        println!("  {}", path.display());
+    for (path, variant) in denoise_paths.iter().skip(1).zip(denoise_variants().iter()) {
+        println!("  {} ({})", path.display(), variant.description);
     }
+    println!("  {} (raw base)", denoise_paths[0].display());
 }
