@@ -9,10 +9,10 @@ use candle_nn::VarBuilder;
 /// A single LSTM layer (unidirectional or bidirectional).
 ///
 /// Compatible with PyTorch's `nn.LSTM` weight naming:
-/// - `weight_ih_l0` shape [4*hidden, input]
-/// - `weight_hh_l0` shape [4*hidden, hidden]
-/// - `bias_ih_l0` shape [4*hidden]
-/// - `bias_hh_l0` shape [4*hidden]
+/// - `weight_ih_l0` shape `[4 * hidden, input]`
+/// - `weight_hh_l0` shape `[4 * hidden, hidden]`
+/// - `bias_ih_l0` shape `[4 * hidden]`
+/// - `bias_hh_l0` shape `[4 * hidden]`
 /// - For reverse: `weight_ih_l0_reverse`, etc.
 pub struct Lstm {
     layers: Vec<LstmLayer>,

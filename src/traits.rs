@@ -280,7 +280,7 @@ impl VoiceEmbedding {
 
 /// Trait for TTS models that support voice cloning from reference audio.
 ///
-/// Not all models support voice cloning. Check [`supports_voice_cloning`]
+/// Not all models support voice cloning. Check [`VoiceCloning::supports_voice_cloning`]
 /// before calling other methods.
 ///
 /// # Example
