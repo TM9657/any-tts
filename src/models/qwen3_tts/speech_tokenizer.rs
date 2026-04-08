@@ -30,7 +30,9 @@ use candle_nn::{
     Conv1d, Conv1dConfig, ConvTranspose1d, ConvTranspose1dConfig, Linear, Module, VarBuilder,
 };
 
-use crate::tensor_utils::{apply_rotary_emb, precompute_rope_freqs, snake_beta};
+use crate::tensor_utils::{
+    apply_rotary_emb, cpu_flash_attention, precompute_rope_freqs, snake_beta,
+};
 
 /// Causal (left-only) padding for 1-D convolutions.
 ///
@@ -300,12 +302,18 @@ impl PreTransformerLayer {
         let sin_slice = rope_sin.narrow(0, 0, seq_len)?.unsqueeze(0)?.unsqueeze(0)?;
         let (q, k) = apply_rotary_emb(&q, &k, &cos_slice, &sin_slice)?;
 
-        let scale = (self.head_dim as f64).sqrt();
-        let attn = (q.matmul(&k.transpose(2, 3)?)? / scale)?;
-        // Apply causal mask: (1, 1, seq, seq) → -inf for future positions
-        let attn = attn.broadcast_add(causal_mask)?;
-        let attn = candle_nn::ops::softmax_last_dim(&attn)?;
-        let out = attn.matmul(&v)?;
+        let scale = 1.0f32 / (self.head_dim as f32).sqrt();
+        let out = if let Some(cpu_attn_out) =
+            cpu_flash_attention(&q, &k, &v, Some(causal_mask), scale)?
+        {
+            cpu_attn_out
+        } else {
+            let attn = q.matmul(&k.transpose(2, 3)?)?.affine(scale as f64, 0.0)?;
+            // Apply causal mask: (1, 1, seq, seq) → -inf for future positions
+            let attn = attn.broadcast_add(causal_mask)?;
+            let attn = candle_nn::ops::softmax_last_dim(&attn)?;
+            attn.matmul(&v)?
+        };
         let out = out
             .transpose(1, 2)?
             .reshape((batch, seq_len, self.num_heads * self.head_dim))?;

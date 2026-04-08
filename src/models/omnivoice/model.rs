@@ -89,7 +89,8 @@ impl OmniVoiceBackbone {
             llm.max_position_embeddings,
             llm.rope_theta(),
             llm.rms_norm_eps,
-        );
+        )
+        .with_cpu_flash_attention(false);
 
         let text_embeddings =
             candle_nn::embedding(llm.vocab_size, llm.hidden_size, vb.pp("llm.embed_tokens"))?;

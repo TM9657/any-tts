@@ -84,9 +84,9 @@ download = ["dep:reqwest"]
 
 [dependencies]
 base64 = "0.22"
-candle-core = "0.9.2"
-candle-nn = "0.9.2"
-candle-transformers = "0.9.2"
+candle-core = "0.10.2"
+candle-nn = "0.10.2"
+candle-transformers = "0.10.2"
 rustc-hash = "1.1"
 rustfft = "6"
 safetensors = "0.7.0"

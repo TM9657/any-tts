@@ -11,7 +11,9 @@ use crate::audio::AudioSamples;
 use crate::config::{DType as ConfigDType, ModelAsset, ModelAssetDir, ModelFiles, TtsConfig};
 use crate::error::TtsError;
 use crate::layers::conv::apply_weight_norm;
-use crate::tensor_utils::{apply_rotary_emb, precompute_rope_freqs, silu, RmsNorm};
+use crate::tensor_utils::{
+    apply_rotary_emb, cpu_flash_attention, precompute_rope_freqs, silu, RmsNorm,
+};
 use crate::traits::{ModelInfo, SynthesisRequest, TtsModel};
 
 use super::config::{
@@ -412,20 +414,38 @@ impl MistralAttention {
         };
         self.kv_cache = Some((k.clone(), v.clone()));
 
-        let k = repeat_kv_heads(&k, self.num_heads / self.num_kv_heads)?;
-        let v = repeat_kv_heads(&v, self.num_heads / self.num_kv_heads)?;
-
-        let k_t = k.transpose(2, 3)?.contiguous()?;
-        let attn_scores = q
-            .matmul(&k_t)?
-            .affine(1.0 / (self.head_dim as f64).sqrt(), 0.0)?;
-        let attn_scores = if let Some(mask) = mask {
-            attn_scores.broadcast_add(mask)?
+        let scale = 1.0f32 / (self.head_dim as f32).sqrt();
+        let attn_output = if let Some(cpu_attn_output) =
+            cpu_flash_attention(&q, &k, &v, mask, scale)?
+        {
+            cpu_attn_output
+        } else if seq_len == 1
+            && mask.is_none()
+            && matches!(x.device(), Device::Metal(_))
+        {
+            candle_nn::ops::sdpa(
+                &q.contiguous()?,
+                &k.contiguous()?,
+                &v.contiguous()?,
+                None,
+                false,
+                scale,
+                1.0,
+            )?
         } else {
-            attn_scores
+            let k = repeat_kv_heads(&k, self.num_heads / self.num_kv_heads)?;
+            let v = repeat_kv_heads(&v, self.num_heads / self.num_kv_heads)?;
+
+            let k_t = k.transpose(2, 3)?.contiguous()?;
+            let attn_scores = q.matmul(&k_t)?.affine(scale as f64, 0.0)?;
+            let attn_scores = if let Some(mask) = mask {
+                attn_scores.broadcast_add(mask)?
+            } else {
+                attn_scores
+            };
+            let attn_probs = candle_nn::ops::softmax_last_dim(&attn_scores)?;
+            attn_probs.matmul(&v)?
         };
-        let attn_probs = candle_nn::ops::softmax_last_dim(&attn_scores)?;
-        let attn_output = attn_probs.matmul(&v)?;
         let attn_output = attn_output.transpose(1, 2)?.reshape((
             batch_size,
             seq_len,
@@ -649,12 +669,15 @@ impl BidirectionalAttention {
         let q = xq.transpose(1, 2)?.contiguous()?;
         let k = xk.transpose(1, 2)?.contiguous()?;
         let v = xv.transpose(1, 2)?.contiguous()?;
-        let k_t = k.transpose(2, 3)?.contiguous()?;
-        let attn = q
-            .matmul(&k_t)?
-            .affine(1.0 / (self.head_dim as f64).sqrt(), 0.0)?;
-        let attn = candle_nn::ops::softmax_last_dim(&attn)?;
-        let out = attn.matmul(&v)?;
+        let scale = 1.0f32 / (self.head_dim as f32).sqrt();
+        let out = if let Some(cpu_attn_output) = cpu_flash_attention(&q, &k, &v, None, scale)? {
+            cpu_attn_output
+        } else {
+            let k_t = k.transpose(2, 3)?.contiguous()?;
+            let attn = q.matmul(&k_t)?.affine(scale as f64, 0.0)?;
+            let attn = candle_nn::ops::softmax_last_dim(&attn)?;
+            attn.matmul(&v)?
+        };
         let out =
             out.transpose(1, 2)?
                 .reshape((batch_size, seq_len, self.n_heads * self.head_dim))?;

@@ -104,6 +104,70 @@ pub fn silu(x: &Tensor) -> Result<Tensor> {
     x.mul(&sigmoid)
 }
 
+/// Run Candle's CPU fused attention helper for standard heads-first tensors.
+///
+/// Inputs must have shape `(batch, heads, seq, head_dim)` for `q`, `k`, and `v`.
+/// The helper is only used for F32 CPU tensors; other cases fall back to the
+/// caller's existing attention implementation.
+pub fn cpu_flash_attention(
+    q: &Tensor,
+    k: &Tensor,
+    v: &Tensor,
+    mask: Option<&Tensor>,
+    scale: f32,
+) -> Result<Option<Tensor>> {
+    let (batch_size, _q_heads, q_seq, _head_dim) = q.dims4()?;
+    let (_k_batch, _k_heads, k_seq, _k_head_dim) = k.dims4()?;
+
+    if !matches!(q.device(), Device::Cpu)
+        || !matches!(k.device(), Device::Cpu)
+        || !matches!(v.device(), Device::Cpu)
+    {
+        return Ok(None);
+    }
+
+    if q.dtype() != DType::F32 || k.dtype() != DType::F32 || v.dtype() != DType::F32 {
+        return Ok(None);
+    }
+
+    if let Some(mask) = mask {
+        if !matches!(mask.device(), Device::Cpu) || mask.dtype() != DType::F32 {
+            return Ok(None);
+        }
+
+        let supported_mask = match mask.dims() {
+            [mask_batch, mask_heads, mask_q_seq, mask_k_seq] => {
+                *mask_batch == batch_size
+                    && *mask_heads == 1
+                    && *mask_q_seq == q_seq
+                    && *mask_k_seq == k_seq
+            }
+            [mask_batch, mask_q_seq, mask_k_seq] => {
+                *mask_batch == batch_size && *mask_q_seq == q_seq && *mask_k_seq == k_seq
+            }
+            _ => false,
+        };
+
+        if !supported_mask {
+            return Ok(None);
+        }
+    }
+
+    let q = q.transpose(1, 2)?.contiguous()?;
+    let k = k.transpose(1, 2)?.contiguous()?;
+    let v = v.transpose(1, 2)?.contiguous()?;
+    let attn = candle_nn::cpu_flash_attention::run_flash_attn_cpu::<f32>(
+        &q,
+        &k,
+        &v,
+        mask,
+        scale,
+        None,
+        None,
+    )?;
+    Ok(Some(attn))
+}
+
 /// SnakeBeta activation: x + (1/(exp(beta) + eps)) * sin²(exp(alpha) * x)
 ///
 /// `alpha` and `beta` are the learned parameters stored in **log-space**.

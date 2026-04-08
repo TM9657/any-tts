@@ -17,6 +17,7 @@ use candle_core::{Device, Module, Result, Tensor};
 use candle_nn::VarBuilder;
 
 use super::config::PlbertConfig;
+use crate::tensor_utils::cpu_flash_attention;
 
 fn scalar_like(tensor: &Tensor, value: f32) -> Result<Tensor> {
     Tensor::new(value, tensor.device())?.to_dtype(tensor.dtype())
@@ -263,13 +264,18 @@ impl AlbertAttention {
 
         // Scaled dot-product attention
         let scale = 1.0f32 / (self.head_dim as f32).sqrt();
-        let k_t = k.transpose(2, 3)?.contiguous()?;
-        let attn_weights = q.matmul(&k_t)?;
-        let attn_weights = scale_tensor(&attn_weights, scale)?;
-        let attn_weights = attn_weights.broadcast_add(attn_bias)?;
-        let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
-
-        let attn_out = attn_weights.matmul(&v)?;
+        let attn_out = if let Some(cpu_attn_out) =
+            cpu_flash_attention(&q, &k, &v, Some(attn_bias), scale)?
+        {
+            cpu_attn_out
+        } else {
+            let k_t = k.transpose(2, 3)?.contiguous()?;
+            let attn_weights = q.matmul(&k_t)?;
+            let attn_weights = scale_tensor(&attn_weights, scale)?;
+            let attn_weights = attn_weights.broadcast_add(attn_bias)?;
+            let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
+            attn_weights.matmul(&v)?
+        };
         let attn_out =
             attn_out
                 .transpose(1, 2)?
