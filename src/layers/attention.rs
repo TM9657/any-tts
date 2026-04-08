@@ -20,7 +20,6 @@ pub struct GqaConfig {
     pub rope_theta: f64,
     pub rms_norm_eps: f64,
     pub attention_bias: bool,
-    pub cpu_flash_attention: bool,
 }
 
 impl GqaConfig {
@@ -42,7 +41,6 @@ impl GqaConfig {
             rope_theta,
             rms_norm_eps,
             attention_bias: false,
-            cpu_flash_attention: true,
         }
     }
 
@@ -66,17 +64,11 @@ impl GqaConfig {
             rope_theta,
             rms_norm_eps,
             attention_bias: false,
-            cpu_flash_attention: true,
         }
     }
 
     pub fn with_attention_bias(mut self, attention_bias: bool) -> Self {
         self.attention_bias = attention_bias;
-        self
-    }
-
-    pub fn with_cpu_flash_attention(mut self, cpu_flash_attention: bool) -> Self {
-        self.cpu_flash_attention = cpu_flash_attention;
         self
     }
 }
@@ -92,7 +84,6 @@ pub struct GroupedQueryAttention {
     num_heads: usize,
     num_kv_heads: usize,
     head_dim: usize,
-    cpu_flash_attention: bool,
     kv_cache: Option<(Tensor, Tensor)>,
 }
 
@@ -139,7 +130,6 @@ impl GroupedQueryAttention {
             num_heads: config.num_attention_heads,
             num_kv_heads: config.num_key_value_heads,
             head_dim: config.head_dim,
-            cpu_flash_attention: config.cpu_flash_attention,
             kv_cache: None,
         })
     }
@@ -211,55 +201,8 @@ impl GroupedQueryAttention {
         self.kv_cache = Some((k.clone(), v.clone()));
 
         let scale = 1.0f32 / (self.head_dim as f32).sqrt();
-        let attn_output = if self.cpu_flash_attention {
-            if let Some(cpu_attn_output) =
-            cpu_flash_attention(&q, &k, &v, mask, scale)?
-            {
-                cpu_attn_output
-            } else if seq_len == 1
-                && mask.is_none()
-                && matches!(x.device(), candle_core::Device::Metal(_))
-            {
-                candle_nn::ops::sdpa(
-                    &q.contiguous()?,
-                    &k.contiguous()?,
-                    &v.contiguous()?,
-                    None,
-                    false,
-                    scale,
-                    1.0,
-                )?
-            } else {
-                // Repeat KV heads to match Q heads (GQA expansion)
-                // Use repeat_interleave semantics: [h0,h0,h1,h1,...] not repeat: [h0..h7,h0..h7]
-                // so that Q head i pairs with KV head i/repeat_factor.
-                let repeat_factor = self.num_heads / self.num_kv_heads;
-                let kv_len = k.dim(2)?;
-                let k = if repeat_factor > 1 {
-                    k.unsqueeze(2)?
-                        .repeat(&[1, 1, repeat_factor, 1, 1])?
-                        .reshape((batch, self.num_heads, kv_len, self.head_dim))?
-                } else {
-                    k
-                };
-                let v = if repeat_factor > 1 {
-                    v.unsqueeze(2)?
-                        .repeat(&[1, 1, repeat_factor, 1, 1])?
-                        .reshape((batch, self.num_heads, kv_len, self.head_dim))?
-                } else {
-                    v
-                };
-
-                let attn_weights = q.matmul(&k.transpose(2, 3)?)?.affine(scale as f64, 0.0)?;
-                let attn_weights = if let Some(mask) = mask {
-                    attn_weights.broadcast_add(mask)?
-                } else {
-                    attn_weights
-                };
-
-                let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
-                attn_weights.matmul(&v)?
-            }
+        let attn_output = if let Some(cpu_attn_output) = cpu_flash_attention(&q, &k, &v, mask, scale)? {
+            cpu_attn_output
         } else if seq_len == 1
             && mask.is_none()
             && matches!(x.device(), candle_core::Device::Metal(_))

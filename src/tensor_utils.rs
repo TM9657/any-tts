@@ -107,8 +107,13 @@ pub fn silu(x: &Tensor) -> Result<Tensor> {
 /// Run Candle's CPU fused attention helper for standard heads-first tensors.
 ///
 /// Inputs must have shape `(batch, heads, seq, head_dim)` for `q`, `k`, and `v`.
-/// The helper is only used for F32 CPU tensors; other cases fall back to the
-/// caller's existing attention implementation.
+/// The helper is only used for F32 CPU tensors in known-good attention
+/// regimes; other cases fall back to the caller's existing attention
+/// implementation.
+fn cpu_flash_attention_shape_eligible(q_heads: usize, k_heads: usize, q_seq: usize) -> bool {
+    q_heads == k_heads || q_seq == 1
+}
+
 pub fn cpu_flash_attention(
     q: &Tensor,
     k: &Tensor,
@@ -116,8 +121,8 @@ pub fn cpu_flash_attention(
     mask: Option<&Tensor>,
     scale: f32,
 ) -> Result<Option<Tensor>> {
-    let (batch_size, _q_heads, q_seq, _head_dim) = q.dims4()?;
-    let (_k_batch, _k_heads, k_seq, _k_head_dim) = k.dims4()?;
+    let (batch_size, q_heads, q_seq, _head_dim) = q.dims4()?;
+    let (_k_batch, k_heads, k_seq, _k_head_dim) = k.dims4()?;
 
     if !matches!(q.device(), Device::Cpu)
         || !matches!(k.device(), Device::Cpu)
@@ -127,6 +132,13 @@ pub fn cpu_flash_attention(
     }
 
     if q.dtype() != DType::F32 || k.dtype() != DType::F32 || v.dtype() != DType::F32 {
+        return Ok(None);
+    }
+
+    // Single-token incremental decode is a useful fast path even for grouped
+    // attention, but full-sequence grouped-query attention fell back better in
+    // OmniVoice-style runs. Keep the CPU fused path conservative.
+    if !cpu_flash_attention_shape_eligible(q_heads, k_heads, q_seq) {
         return Ok(None);
     }
 
@@ -187,6 +199,13 @@ pub fn snake_beta(x: &Tensor, alpha: &Tensor, beta: &Tensor) -> Result<Tensor> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_cpu_flash_attention_shape_policy() {
+        assert!(cpu_flash_attention_shape_eligible(16, 16, 128));
+        assert!(cpu_flash_attention_shape_eligible(16, 8, 1));
+        assert!(!cpu_flash_attention_shape_eligible(16, 8, 128));
+    }
 
     #[test]
     fn test_rms_norm_shape() {
