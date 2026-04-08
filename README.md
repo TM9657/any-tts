@@ -5,34 +5,40 @@
 # any-tts
 
 <p align="center">
-  Rust-native text-to-speech for modern open models.
+  Rust-native text-to-speech and speech synthesis for modern open-weight models.
 </p>
 
 <p align="center">
   <a href="https://github.com/TM9657/any-tts"><img src="https://img.shields.io/badge/repo-TM9657%2Fany--tts-111111" alt="Repository"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/crate_license-MIT%20OR%20Apache--2.0-2d6cdf" alt="Crate license"></a>
-    <img src="https://img.shields.io/badge/models-5_public%20backends-0a7f5a" alt="Public models">
+    <img src="https://img.shields.io/badge/models-6_public%20backends-0a7f5a" alt="Public models">
   <img src="https://img.shields.io/badge/runtime-Candle%20CPU%20%7C%20CUDA%20%7C%20Metal%20%7C%20Accelerate-8a4fff" alt="Backends">
 </p>
 
-The Flow-Like icon above is intentionally in use here at the top of this README.
+any-tts is a Rust TTS library built around Candle with one trait-based API for Kokoro, OmniVoice, Qwen3-TTS, VibeVoice, VibeVoice Realtime, and Voxtral. It is aimed at developers who want local speech synthesis, multilingual TTS, reference-audio prompting, preset-voice workflows, or low-latency voice agents without rewriting their application around each model family.
 
-any-tts is a Rust text-to-speech library built around Candle with one trait-based API for multiple open-weight model families. You can point it at local files, hand it explicit paths from your own cache, feed it named in-memory byte assets from an object store, or let it resolve missing assets from Hugging Face and keep the synthesis call site unchanged.
-
-If you want one Rust TTS surface for small local models, multilingual research checkpoints, and agent-oriented voice stacks without rewriting your application around each model family, this is the repo.
+You can point it at local files, hand it explicit paths from your own cache, feed it named in-memory byte assets from an object store, or let it resolve missing assets from Hugging Face while keeping the synthesis call site unchanged.
 
 For Flow-like specifically: every public backend can now load from relative-path byte assets, so `object_store` reads can go straight into `TtsConfig` without writing temp files first.
 
+## Jump to
+
+- [Supported TTS models](#supported-tts-models)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Examples in this repo](#examples-in-this-repo)
+- [Model guide](#model-guide)
+
 ## Why this repo exists
 
-- One API for Kokoro, OmniVoice, Qwen3-TTS, VibeVoice, and Voxtral.
+- One API for Kokoro, OmniVoice, Qwen3-TTS, VibeVoice, VibeVoice Realtime, and Voxtral.
 - Native Rust backends across the public model surface.
 - Local path loading, in-memory byte bundles, per-file wiring, or Hugging Face fallback.
-- CPU first, GPU when available: CUDA, Metal, and Accelerate build targets.
-- Request-level control for `language`, `voice`, `instruct`, `max_tokens`, `temperature`, and `cfg_scale`.
+- GPU first when available through CUDA or Metal, with CPU fallback and optional Accelerate support for Apple CPU builds.
+- Request-level control for `language`, `voice`, `reference_audio`, `instruct`, `max_tokens`, `temperature`, and `cfg_scale`.
 - WAV output everywhere, with built-in WAV and MP3 input decoding for cleanup and reference-audio workflows.
 
-## Public model support
+## Supported TTS models
 
 | Model | Status in any-tts | Default upstream | Best at | Main tradeoff | Model license |
 | --- | --- | --- | --- | --- | --- |
@@ -40,17 +46,21 @@ For Flow-like specifically: every public backend can now load from relative-path
 | OmniVoice | Public, native | `k2-fsa/OmniVoice` | Huge language coverage and instruct-driven voice design | The current Rust backend does not yet expose upstream zero-shot cloning | Apache-2.0 |
 | Qwen3-TTS-12Hz-1.7B | Public, native | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` | Strong multilingual control, named speakers, and instruct handling | Heavy weights and extra speech-tokenizer assets | Apache-2.0 |
 | VibeVoice-1.5B | Public, native | `microsoft/VibeVoice-1.5B` | Long-form multi-speaker speech diffusion with native Rust inference | Still early and currently optimized for single-request parity work rather than streaming performance | MIT |
+| VibeVoice-Realtime-0.5B | Public, native | `microsoft/VibeVoice-Realtime-0.5B` | Low-latency preset-voice TTS with native Rust inference | English-first upstream and depends on cached `voices/*.pt` presets instead of reference audio | MIT |
 | Voxtral-4B-TTS-2603 | Public, native | `mistralai/Voxtral-4B-TTS-2603` | Production-style voice agents, preset voices, low-latency oriented stack | Largest backend here and not commercially permissive | CC BY-NC 4.0 |
 
 Important: the Rust crate is dual licensed under `MIT OR Apache-2.0`. The model weights are not. Always check the model-specific license before shipping. Voxtral is the one that changes the deployment story the most because its published checkpoint is `CC BY-NC 4.0`.
 
-## Referenced but not yet public API
+All six models above are exposed through the public `ModelType` enum and `load_model()` API.
 
-| Model | Where it appears in this repo | Current status | Upstream license | Notes |
-| --- | --- | --- | --- | --- |
-| KugelAudio-0-Open | `src/models/kugelaudio/` and `examples/generate_kugelaudio.rs` | In-tree experiment, not exported from the public `ModelType` enum | MIT | Focused on 24 European languages and pre-encoded voices, but the current example targets a model variant that is not part of the crate's exported API surface yet. |
+## Choose a backend
 
-That split matters. The README below treats Kokoro, OmniVoice, Qwen3-TTS, VibeVoice, and Voxtral as supported top-level backends, and it treats KugelAudio as work in progress.
+- Use `Kokoro` when you want the smallest local deployment and simple preset-voice TTS.
+- Use `OmniVoice` when language coverage and `instruct` matter more than named voices.
+- Use `Qwen3Tts` when you want the strongest public request-control surface and named speakers.
+- Use `VibeVoice` when you need long-form or reference-audio-conditioned generation.
+- Use `VibeVoiceRealtime` when you want cached-prompt preset voices and faster time-to-first-audio.
+- Use `Voxtral` when you want preset-voice, voice-agent-style deployment and can accept its model license.
 
 ## Installation
 
@@ -72,14 +82,14 @@ any-tts = { version = "0.1", default-features = false, features = ["kokoro", "do
 
 ### Feature flags
 
-By default the crate enables `qwen3-tts`, `kokoro`, `omnivoice`, `vibevoice`, `voxtral`, and `download`.
+By default the crate enables `qwen3-tts`, `kokoro`, `omnivoice`, `vibevoice`, `voxtral`, and `download`. The `vibevoice` feature exposes both `ModelType::VibeVoice` and `ModelType::VibeVoiceRealtime`.
 
 | Feature | What it does |
 | --- | --- |
 | `kokoro` | Enables the Kokoro backend. |
 | `omnivoice` | Enables the native OmniVoice backend. |
 | `qwen3-tts` | Enables the Qwen3-TTS backend. |
-| `vibevoice` | Enables the native VibeVoice backend. |
+| `vibevoice` | Enables the native VibeVoice and VibeVoice Realtime backends. |
 | `voxtral` | Enables the native Voxtral backend. |
 | `download` | Allows missing model files to be pulled from Hugging Face Hub through the crate's built-in downloader. |
 | `cuda` | Builds Candle with CUDA support. |
@@ -205,6 +215,7 @@ You can inspect the documented manifest programmatically through `ModelType::ass
 | OmniVoice | `config.json`, `tokenizer.json`, `model.safetensors` or `model-*-of-*.safetensors`, `audio_tokenizer/config.json`, `audio_tokenizer/model.safetensors` or `audio_tokenizer/model-*-of-*.safetensors` | `generation_config.json` |
 | Qwen3-TTS | `config.json`, `tokenizer.json`, `model.safetensors` or `model-*-of-*.safetensors`, `speech_tokenizer/model.safetensors` or `speech_tokenizer/model-*-of-*.safetensors` | `speech_tokenizer/config.json`, `generation_config.json` |
 | VibeVoice | `config.json`, `tokenizer.json`, `model.safetensors` or `model-*-of-*.safetensors` | `preprocessor_config.json`, `generation_config.json` |
+| VibeVoice Realtime | `config.json`, `tokenizer.json`, `model.safetensors` | `preprocessor_config.json`, `voices/*.pt` |
 | Voxtral | `params.json`, `tekken.json`, `consolidated.safetensors`, `voice_embedding/*.pt` | none |
 
 Using these exact relative paths makes the byte-based API foolproof because the same names are what `with_model_path()` auto-discovery expects on disk.
@@ -217,12 +228,12 @@ Using these exact relative paths makes the byte-based API foolproof because the 
 | --- | --- | --- |
 | `text` | Input text to synthesize | Required for every backend. |
 | `language` | Language tag or model-specific language name | Supports ISO tags in several backends and `auto` where available. |
-| `voice` | Named speaker or preset voice | Works for Kokoro, Qwen3 CustomVoice, and Voxtral. OmniVoice rejects named voices. |
+| `voice` | Named speaker or preset voice | Works for Kokoro, Qwen3 CustomVoice, VibeVoice Realtime, and Voxtral. OmniVoice rejects named voices, and full VibeVoice expects `reference_audio` instead. |
 | `instruct` | Natural-language style control | Most useful on OmniVoice and Qwen3. |
 | `max_tokens` | Upper bound on generated codec/audio tokens | Helpful for latency testing and smoke tests. |
 | `temperature` | Sampling temperature | Supported where the backend uses it. |
 | `cfg_scale` | Classifier-free guidance scale | Used by OmniVoice and other backends that expose CFG-like control. |
-| `reference_audio` | Reference clip for voice cloning | Only partially supported today; unsupported backends return an explicit error. |
+| `reference_audio` | Reference clip for voice cloning or prompt conditioning | Used by backends such as VibeVoice when conditioning from speech; unsupported backends return an explicit error. |
 | `voice_embedding` | Precomputed embedding payload | Currently reusable with backends that accept embeddings directly. |
 
 ## Examples in this repo
@@ -233,6 +244,7 @@ These are the example entry points that match the current public crate surface:
 cargo run --example generate_kokoro --release
 cargo run --example generate_qwen3_tts --release
 cargo run --example generate_vibevoice --release --no-default-features --features vibevoice,download,metal
+cargo run --example generate_vibevoice_realtime --release --no-default-features --features vibevoice,download,metal
 cargo run --example generate_voxtral --release
 cargo run --example generate_omnivoice --release --no-default-features --features omnivoice,download,metal
 cargo run --example generate_comparison_suite --release --features metal -- --runtime all
@@ -247,9 +259,9 @@ Outputs are written under `output/` by the example binaries.
 `output/denoise/` by default. You can override that folder with
 `VIBEVOICE_DENOISE_DIR`.
 
-`generate_comparison_suite` writes a shared English and German comparison set under `output/model_comparison/cpu/` and `output/model_comparison/metal/`, plus `report.json` files with per-model load time, per-sample synthesis time, audio duration, and realtime factor. It loads one model at a time so the full suite can run sequentially on tighter memory budgets.
+`generate_vibevoice_realtime` targets `ModelType::VibeVoiceRealtime` and expects cached prompt presets under `models/VibeVoice-Realtime-0.5B/voices/` by default. Use `VIBEVOICE_REALTIME_MODEL_PATH`, `VIBEVOICE_REALTIME_VOICES_DIR`, `VIBEVOICE_REALTIME_VOICE`, `VIBEVOICE_REALTIME_DEVICE`, and `VIBEVOICE_REALTIME_OUTPUT` to override the defaults.
 
-Note on KugelAudio: there is an in-tree `generate_kugelaudio` example, but it currently targets a non-exported `ModelType` variant and should be treated as experimental repo work rather than public API.
+`generate_comparison_suite` writes a shared English and German comparison set under `output/model_comparison/cpu/` and `output/model_comparison/metal/`, plus `report.json` files with per-model load time, per-sample synthesis time, audio duration, and realtime factor. It loads one model at a time so the full suite can run sequentially on tighter memory budgets.
 
 ## Model guide
 
@@ -374,6 +386,79 @@ let audio = model.synthesize(
 - Upstream model weights: Apache-2.0.
 - Crate code using the model: `MIT OR Apache-2.0`.
 
+### VibeVoice-1.5B
+
+**What it is**
+
+VibeVoice-1.5B is the long-form diffusion backend in this crate. It is the VibeVoice option to choose when you want native Rust inference with reference-audio-conditioned prompting instead of named preset voices.
+
+**What works in any-tts today**
+
+- Native Rust backend.
+- `reference_audio`, `language`, `instruct`, `cfg_scale`, `max_tokens`, and `temperature` request controls.
+- 24 kHz output with automatic runtime selection across CPU, CUDA, or Metal.
+- Public `ModelType::VibeVoice` loading through the shared `vibevoice` feature.
+
+**What does not work yet in the Rust backend**
+
+- Named voice presets.
+- Pre-extracted reusable voice embeddings.
+- Low-latency streaming generation; the current path is still optimized for correctness and parity work.
+
+**Pros**
+
+- Best fit in this repo for long-form, reference-audio-conditioned synthesis.
+- Native Rust inference for a model family that is often driven from Python examples upstream.
+- Shares the same trait-based API as the smaller and faster backends.
+
+**Cons**
+
+- Heavier and slower than Kokoro or VibeVoice Realtime.
+- Still an early backend compared with the simpler local-first paths.
+- Not the right choice if your application needs preset voice names or fast startup latency.
+
+**License**
+
+- Upstream model weights: MIT.
+- Crate code using the model: `MIT OR Apache-2.0`.
+
+### VibeVoice-Realtime-0.5B
+
+**What it is**
+
+VibeVoice Realtime is the smaller low-latency VibeVoice variant. In this crate it is exposed as `ModelType::VibeVoiceRealtime` and centers on cached-prompt voice presets rather than reference-audio cloning.
+
+**What works in any-tts today**
+
+- Native Rust backend.
+- Cached-prompt voice presets discovered from `voices/*.pt`.
+- Public example coverage through `generate_vibevoice_realtime`.
+- 24 kHz output with the same Candle runtime selection flow used by the rest of the crate.
+- Voice selection through `SynthesisRequest::with_voice()` when matching preset files are present.
+
+**What does not work yet in the Rust backend**
+
+- Reference-audio input.
+- Pre-extracted voice embeddings.
+- Arbitrary speaker cloning without upstream preset cache files.
+
+**Pros**
+
+- Best fit here for low-latency preset-voice generation.
+- Smaller checkpoint than the full VibeVoice-1.5B model.
+- Good developer path for apps that reuse approved voices and want predictable startup behavior.
+
+**Cons**
+
+- Depends on `voices/*.pt` preset caches and fails explicitly if they are missing.
+- The upstream model card is English-first and research-oriented.
+- Less flexible than full VibeVoice when you need reference-audio conditioning or multi-speaker behavior.
+
+**License**
+
+- Upstream model weights: MIT.
+- Crate code using the model: `MIT OR Apache-2.0`.
+
 ### Voxtral-4B-TTS-2603
 
 **What it is**
@@ -404,36 +489,6 @@ Voxtral is the biggest public backend in the repo and the most obviously voice-a
 
 - Upstream model weights: CC BY-NC 4.0.
 - Crate code using the model: `MIT OR Apache-2.0`.
-
-### KugelAudio-0-Open
-
-**What it is**
-
-KugelAudio is the European-language-focused experimental backend that already lives in the repo tree but is not yet wired into the public `load_model()` surface. The upstream project positions it as an open-source AR plus diffusion TTS stack trained for 24 European languages with pre-encoded voices.
-
-**What the repo tells us today**
-
-- There is a full in-tree Rust model implementation.
-- The example targets `KugelAudio-0-Open` and expects a large model footprint.
-- The Rust code explicitly states that raw reference-audio cloning is not implemented yet.
-- The public API does not currently export the model, so treat it as active development rather than a supported stable backend.
-
-**Pros**
-
-- Strong European language positioning.
-- MIT-licensed upstream software.
-- Clear room for a future public backend if the exported API catches up with the in-tree implementation.
-
-**Cons**
-
-- Not part of the exported crate surface yet.
-- Large model size and memory requirements.
-- Documentation and examples in this repo should currently be read as experimental for this model.
-
-**License**
-
-- Upstream software repository: MIT.
-- Public model and deployment terms should still be verified case by case before production use.
 
 ## Usage patterns that hold across models
 
@@ -503,4 +558,4 @@ The crate metadata declares `MIT OR Apache-2.0` for this repository's Rust code.
 
 ## Status
 
-This repo already has a strong shape: five public native backends, one obvious experimental sixth backend, trait-based loading, and example coverage for the core synthesis paths. The right way to think about it is not "a single-model wrapper" but "a Rust TTS platform layer that is learning how to speak multiple open ecosystems without hiding their differences."
+This repo now has a clear public shape: six native backends, trait-based loading, byte-first asset support, and example coverage for local, multilingual, long-form, preset-voice, and realtime TTS workflows. The right way to think about it is not "a single-model wrapper" but "a Rust TTS platform layer that lets one application target multiple open model ecosystems without hiding their differences."
